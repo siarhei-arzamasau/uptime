@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
-const backendKeys = ["DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "JWT_ISSUER", "JWT_AUDIENCE", "ALLOWED_ORIGIN", "COOKIE_SECURE", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"];
+const backendKeys = ["GO_BIN", "DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "JWT_ISSUER", "JWT_AUDIENCE", "ALLOWED_ORIGIN", "COOKIE_SECURE", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"];
 const frontendKeys = ["BACKEND_URL", "APP_ORIGIN", "NEXT_DIST_DIR"];
 const commonKeys = ["PATH", "HOME", "USER", "TMPDIR", "SHELL", "LANG", "LC_ALL", "GOPATH", "GOCACHE", "GOMODCACHE", "GOPROXY", "GOTOOLCHAIN", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"];
 function pick(env, keys) { return Object.fromEntries(keys.filter(k => env[k] !== undefined).map(k => [k, env[k]])); }
@@ -29,7 +29,7 @@ export function configuration(backendText, frontendText, ambient, e2e = false) {
   if (!["127.0.0.1", "localhost"].includes(b.HTTP_ADDR.split(":")[0]) || apiPort !== Number(api.port || 80) || Number(origin.port || 80) === apiPort) throw new Error("HTTP_ADDR, BACKEND_URL and APP_ORIGIN ports must agree and be distinct.");
   if (b.ALLOWED_ORIGIN && b.ALLOWED_ORIGIN !== origin.origin) throw new Error("ALLOWED_ORIGIN must match APP_ORIGIN.");
   if (!b.JWT_SECRET || b.JWT_SECRET.length < 32 || b.JWT_SECRET.startsWith("replace-") || !b.DATABASE_URL) throw new Error("Complete backend/.env with DATABASE_URL and a random JWT_SECRET first.");
-  return { root, e2e, api: api.origin, origin: origin.origin, apiPort, frontendPort: Number(origin.port || 80), backendEnv: { ...common, ...pick(b, backendKeys) }, frontendEnv: { ...common, ...pick(f, frontendKeys), NEXT_TELEMETRY_DISABLED: "1" }, common };
+  return { root, e2e, goCommand: b.GO_BIN || "go", api: api.origin, origin: origin.origin, apiPort, frontendPort: Number(origin.port || 80), backendEnv: { ...common, ...pick(b, backendKeys) }, frontendEnv: { ...common, ...pick(f, frontendKeys), NEXT_TELEMETRY_DISABLED: "1" }, common };
 }
 export async function boot(c, ops) {
   await ops.check(c);
@@ -40,8 +40,8 @@ export async function boot(c, ops) {
     // Fixed dedicated DB name; never reset or drop the working database.
     await ops.run("docker", ["compose", "exec", "-T", "postgres", "sh", "-c", 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT 1 FROM pg_database WHERE datname=\'uptime_e2e_test\'" | grep -q 1 || createdb -U "$POSTGRES_USER" uptime_e2e_test'], b);
   }
-  await ops.run("go", ["run", "./cmd/migrate", "up"], { ...b, label: "backend" });
-  await ops.run("go", ["build", "-o", c.e2e ? "bin/api-e2e" : "bin/api", "./cmd/api"], { ...b, label: "backend" });
+  await ops.run(c.goCommand, ["run", "./cmd/migrate", "up"], { ...b, label: "backend" });
+  await ops.run(c.goCommand, ["build", "-o", c.e2e ? "bin/api-e2e" : "bin/api", "./cmd/api"], { ...b, label: "backend" });
   ops.start(path.join(b.cwd, c.e2e ? "bin/api-e2e" : "bin/api"), [], { ...b, label: "backend" });
   await ops.ready(`${c.api}/api/v1/auth/me`, 401);
   ops.start("npm", ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(c.frontendPort)], { cwd: path.join(c.root, "frontend"), env: c.frontendEnv, label: "frontend" });
@@ -80,7 +80,11 @@ export class Processes {
       });
     }
     const done = new Promise((resolve, reject) => {
-      child.once("error", () => reject(new Error(`Cannot start ${command}. Check installed tools and PATH.`)));
+      child.once("error", () => {
+        this.children.delete(child);
+        const hint = path.basename(command) === "go" ? "Install Go 1.26+ and add it to PATH, or set GO_BIN=/absolute/path/to/go in backend/.env." : "Check installed tools and PATH.";
+        reject(new Error(`Cannot start ${command}. ${hint}`));
+      });
       child.once("exit", code => { if (!persistent) this.children.delete(child); if (code === 0) resolve(); else reject(new Error(`${options.label} exited with code ${code ?? "signal"}.`)); });
     });
     if (persistent) done.then(() => { if (!this.stopping) this.abort.abort(new Error(`${options.label} stopped unexpectedly.`)); }, e => { if (!this.stopping) this.abort.abort(e); });
@@ -118,7 +122,7 @@ export async function main(e2e = process.argv.includes("--e2e")) {
       log: console.log,
       check: async () => {
         await access(path.join(root, "frontend/node_modules/next/package.json")).catch(() => { throw new Error("Run npm ci in frontend first."); });
-        for (const [cmd, args] of [["npm", ["--version"]], ["go", ["version"]], ["docker", ["compose", "version"]], ["docker", ["info", "--format", "{{.ServerVersion}}"]]]) await processes.run(cmd, args, { cwd: root, env: c.common, label: "check" });
+        for (const [cmd, args] of [["npm", ["--version"]], [c.goCommand, ["version"]], ["docker", ["compose", "version"]], ["docker", ["info", "--format", "{{.ServerVersion}}"]]]) await processes.run(cmd, args, { cwd: root, env: c.common, label: "check" });
       },
       free: assertFree,
       run: (...args) => processes.run(...args),

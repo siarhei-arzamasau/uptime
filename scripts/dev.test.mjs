@@ -47,3 +47,23 @@ describe("process supervision", () => {
     await supervisor.stop(); expect(kill).toHaveBeenCalledWith(-111, "SIGTERM"); expect(kill).toHaveBeenCalledWith(-222, "SIGTERM");
   });
 });
+
+it("uses configured Go executable for migration and build without leaking it to frontend", async () => {
+  const c = configuration(backend + "\nGO_BIN=/local/go/bin/go", frontend, {});
+  const ops = operations(); await boot(c, ops);
+  expect(c.goCommand).toBe("/local/go/bin/go");
+  expect(ops.run.mock.calls[1][0]).toBe(c.goCommand);
+  expect(ops.run.mock.calls[2][0]).toBe(c.goCommand);
+  expect(c.frontendEnv.GO_BIN).toBeUndefined();
+  expect(configuration(backend + "\nGO_BIN=/local/go/bin/go", frontend, { GO_BIN: "/override/go" }).goCommand).toBe("/override/go");
+});
+it("reports how to configure a missing Go executable", async () => {
+  const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  vi.mocked(spawn).mockReturnValueOnce(child);
+  const supervisor = new Processes(new AbortController());
+  const result = supervisor.launch("go", ["version"], { cwd: "/tmp", env: {}, label: "check" });
+  const assertion = expect(result).rejects.toThrow("GO_BIN=/absolute/path/to/go in backend/.env");
+  child.emit("error", new Error("ENOENT"));
+  await assertion;
+  expect(supervisor.children.size).toBe(0);
+});

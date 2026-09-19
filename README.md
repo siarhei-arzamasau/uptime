@@ -43,6 +43,6 @@ npm run dev
 node scripts/dev.mjs
 ```
 
-Скрипт поднимает PostgreSQL, применяет миграции и запускает API и фронтенд. Ctrl+C останавливает оба приложения, сохраняя БД. Если Go находится во временной установке, сначала добавьте `/private/tmp/uptime-toolchain/go/bin` в PATH.
+Скрипт поднимает PostgreSQL, применяет миграции и запускает API и фронтенд. Ctrl+C останавливает оба приложения, сохраняя БД. Если Go не находится в PATH, укажите `GO_BIN=/absolute/path/to/go` в `backend/.env`. На macOS Go можно установить постоянно через `brew install go`.
 
 Подробные настройки, темы и тесты: [frontend/README.md](frontend/README.md). План и чекбоксы: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
