@@ -22,3 +22,11 @@ Use concise imperative commit messages with a type and optional scope, for examp
 ## Security & Configuration
 
 Never commit secrets, dependency directories, or build outputs. Keep project-specific configuration and dependencies within the owning project.
+
+## Commits
+
+- Use Conventional Commits (feat, fix, refactor, test, docs, chore).
+- Keep the subject line within 72 characters and use the imperative mood.
+- Avoid emojis and filler such as "significantly improved".
+- Include a body only when needed to explain why, rather than what.
+- Use one commit per logical step.
