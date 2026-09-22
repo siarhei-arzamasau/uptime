@@ -25,6 +25,7 @@ type Service struct {
 	store     *store.Store
 	tokens    *Tokens
 	dummyHash string
+	passwords *passwordGate
 }
 
 func NewService(s *store.Store, t *Tokens) (*Service, error) {
@@ -32,13 +33,18 @@ func NewService(s *store.Store, t *Tokens) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{s, t, dummy}, nil
+	return &Service{store: s, tokens: t, dummyHash: dummy, passwords: newPasswordGate()}, nil
 }
 func (s *Service) Register(ctx context.Context, email, password string) (Result, error) {
 	email, err := Credentials(email, password)
 	if err != nil {
 		return Result{}, err
 	}
+	release, err := s.passwords.acquire(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	defer release()
 	hash, err := HashPassword(password)
 	if err != nil {
 		return Result{}, err
@@ -63,6 +69,11 @@ func (s *Service) Login(ctx context.Context, email, password string) (Result, er
 	if err != nil {
 		return Result{}, ErrUnauthorized
 	}
+	release, err := s.passwords.acquire(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	defer release()
 	u, err := s.store.UserByEmail(ctx, email)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		CheckPassword(s.dummyHash, password)

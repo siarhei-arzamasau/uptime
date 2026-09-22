@@ -2,11 +2,12 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ProfileForm } from "./profile";
-import { AuthError, updateProfile, uploadAvatar } from "../auth/client";
+import { Profile, ProfileForm } from "./profile";
+import { AuthError, loadProfile, subscribeAuth, updateProfile, uploadAvatar } from "../auth/client";
+import type { AuthResult } from "../auth/types";
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-vi.mock("../auth/client", async original => ({ ...await original<typeof import("../auth/client")>(), updateProfile: vi.fn(), uploadAvatar: vi.fn() }));
+vi.mock("../auth/client", async original => ({ ...await original<typeof import("../auth/client")>(), loadProfile: vi.fn(), subscribeAuth: vi.fn(() => () => {}), updateProfile: vi.fn(), uploadAvatar: vi.fn() }));
 const user = { id: "1", email: "alice@example.com", name: "Alice", avatar_url: "", created_at: "2026-01-01" };
 beforeEach(() => vi.clearAllMocks());
 it("shows email read-only and saves the trimmed name with Enter", async () => {
@@ -48,13 +49,15 @@ it("previews locally and saves avatar and name together only on Save changes", a
   mockBlobURL(); const onSaved = vi.fn();
   const updated = { ...user, name: "Bob", avatar_url: "/api/avatars/saved.png" };
   vi.mocked(uploadAvatar).mockResolvedValue({ user: updated });
-  render(<ProfileForm user={user} onSaved={onSaved} />);
+  const view = render(<ProfileForm user={user} onSaved={onSaved} />);
   await userEvent.upload(screen.getByLabelText("Choose avatar"), avatarFile);
   expect(screen.getByAltText("Selected avatar preview")).toHaveAttribute("src", "blob:preview"); expect(uploadAvatar).not.toHaveBeenCalled();
   await userEvent.clear(screen.getByLabelText("Name")); await userEvent.type(screen.getByLabelText("Name"), "Bob");
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   expect(uploadAvatar).toHaveBeenCalledWith("Bob", avatarFile); expect(updateProfile).not.toHaveBeenCalled();
-  expect(onSaved).toHaveBeenCalledWith(updated); expect(screen.getByAltText("Your avatar")).toHaveAttribute("src", updated.avatar_url);
+  expect(onSaved).toHaveBeenCalledWith(updated);
+  view.rerender(<ProfileForm user={updated} onSaved={onSaved} />);
+  expect(screen.getByAltText("Your avatar")).toHaveAttribute("src", updated.avatar_url);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });
 it("cancels the selection without changing the saved avatar", async () => {
@@ -76,4 +79,131 @@ it("retains selection on upload failure for retry", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   expect(screen.getByRole("alert")).toHaveTextContent("Service unavailable"); expect(screen.getByAltText("Selected avatar preview")).toBeVisible();
   expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+});
+
+it("refreshes untouched fields before saving instead of restoring stale values", async () => {
+  const onSaved = vi.fn();
+  const view = render(<ProfileForm user={user} onSaved={onSaved} />);
+  const refreshed = { ...user, name: "From another tab", avatar_url: "/api/avatars/new.png" };
+  view.rerender(<ProfileForm user={refreshed} onSaved={onSaved} />);
+  expect(screen.getByLabelText("Name")).toHaveValue(refreshed.name);
+  expect(screen.getByAltText("Your avatar")).toHaveAttribute("src", refreshed.avatar_url);
+  vi.mocked(updateProfile).mockResolvedValueOnce({ user: refreshed });
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(updateProfile).toHaveBeenCalledWith(refreshed.name);
+});
+
+it("keeps edited fields and preview while refreshing the saved profile", async () => {
+  mockBlobURL();
+  const onSaved = vi.fn();
+  const view = render(<ProfileForm user={user} onSaved={onSaved} />);
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "My draft" } });
+  await userEvent.upload(screen.getByLabelText("Choose avatar"), avatarFile);
+  const refreshed = { ...user, name: "Another tab", avatar_url: "/api/avatars/latest.png" };
+  view.rerender(<ProfileForm user={refreshed} onSaved={onSaved} />);
+  expect(screen.getByLabelText("Name")).toHaveValue("My draft");
+  expect(screen.getByAltText("Selected avatar preview")).toHaveAttribute("src", "blob:preview");
+  await userEvent.click(screen.getByRole("button", { name: "Cancel selection" }));
+  expect(screen.getByAltText("Your avatar")).toHaveAttribute("src", refreshed.avatar_url);
+  vi.mocked(updateProfile).mockResolvedValueOnce({ user: { ...refreshed, name: "My draft" } });
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(updateProfile).toHaveBeenCalledWith("My draft");
+});
+
+it.each([0, 503])("preserves the draft and selected file across a revalidation failure (%i)", async status => {
+  mockBlobURL();
+  vi.mocked(loadProfile).mockResolvedValue({ user });
+  render(<Profile />);
+  await screen.findByLabelText("Name");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Unsaved draft" } });
+  await userEvent.upload(screen.getByLabelText("Choose avatar"), avatarFile);
+  vi.mocked(loadProfile).mockRejectedValueOnce(new AuthError("Service unavailable", status));
+  await act(async () => { fireEvent.focus(window); });
+  expect(screen.getByRole("alert")).toHaveTextContent("Service unavailable");
+  expect(screen.getByLabelText("Name")).toHaveValue("Unsaved draft");
+  expect(screen.getByAltText("Selected avatar preview")).toBeVisible();
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  const calls = vi.mocked(loadProfile).mock.calls.length;
+  fireEvent.focus(window);
+  expect(loadProfile).toHaveBeenCalledTimes(calls);
+  await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Name")).toHaveValue("Unsaved draft");
+  vi.mocked(uploadAvatar).mockResolvedValueOnce({ user: { ...user, name: "Unsaved draft", avatar_url: "/api/avatars/saved.png" } });
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(uploadAvatar).toHaveBeenCalledWith("Unsaved draft", avatarFile);
+  expect(screen.getByAltText("Your avatar")).toHaveAttribute("src", "/api/avatars/saved.png");
+  vi.mocked(loadProfile).mockResolvedValueOnce({ user: { ...user, name: "Updated after saving" } });
+  await act(async () => { fireEvent.focus(window); });
+  expect(screen.getByLabelText("Name")).toHaveValue("Updated after saving");
+});
+
+it("discards the draft when revalidation confirms an expired session", async () => {
+  vi.mocked(loadProfile).mockResolvedValue({ user });
+  render(<Profile />);
+  await screen.findByLabelText("Name");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Private draft" } });
+  vi.mocked(loadProfile).mockRejectedValueOnce(new AuthError("Session ended", 401));
+  await act(async () => { fireEvent.focus(window); });
+  expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+  expect(router.replace).toHaveBeenCalledWith("/login");
+});
+
+it("discards the previous account's draft after an authentication change", async () => {
+  let changed!: () => void;
+  vi.mocked(subscribeAuth).mockImplementationOnce(listener => { changed = listener; return () => {}; });
+  vi.mocked(loadProfile).mockResolvedValueOnce({ user });
+  render(<Profile />);
+  await screen.findByLabelText("Name");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Private draft" } });
+  vi.mocked(loadProfile).mockResolvedValueOnce({ user: { ...user, id: "2", email: "bob@example.com", name: "Bob" } });
+  await act(async () => { changed(); });
+  expect(screen.getByLabelText("Email address")).toHaveValue("bob@example.com");
+  expect(screen.getByLabelText("Name")).toHaveValue("Bob");
+});
+
+it.each(["name", "avatar"])("ignores an older profile response after saving %s", async kind => {
+  mockBlobURL();
+  vi.mocked(loadProfile).mockResolvedValueOnce({ user });
+  render(<Profile />);
+  await screen.findByLabelText("Name");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Saved name" } });
+  if (kind === "avatar") await userEvent.upload(screen.getByLabelText("Choose avatar"), avatarFile);
+
+  let finishCheck!: (result: AuthResult) => void;
+  vi.mocked(loadProfile).mockReturnValueOnce(new Promise(resolve => { finishCheck = resolve; }));
+  fireEvent.focus(window);
+  expect(loadProfile).toHaveBeenCalledTimes(2);
+  const savedUser = { ...user, name: "Saved name", avatar_url: kind === "avatar" ? "/api/avatars/saved.png" : "" };
+  vi.mocked(updateProfile).mockResolvedValue({ user: savedUser });
+  vi.mocked(uploadAvatar).mockResolvedValue({ user: savedUser });
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Profile saved.");
+  await act(async () => { finishCheck({ user }); });
+
+  expect(screen.getByLabelText("Name")).toHaveValue("Saved name");
+  if (kind === "avatar") expect(screen.getByAltText("Your avatar")).toHaveAttribute("src", savedUser.avatar_url);
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(updateProfile).toHaveBeenLastCalledWith("Saved name");
+});
+
+it.each([401, 503])("ignores an older revalidation error (%i) after a successful save", async status => {
+  vi.mocked(loadProfile).mockResolvedValueOnce({ user });
+  render(<Profile />);
+  await screen.findByLabelText("Name");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Saved name" } });
+  let failCheck!: (error: Error) => void;
+  vi.mocked(loadProfile).mockReturnValueOnce(new Promise((_, reject) => { failCheck = reject; }));
+  fireEvent.focus(window);
+  expect(loadProfile).toHaveBeenCalledTimes(2);
+  vi.mocked(updateProfile).mockResolvedValueOnce({ user: { ...user, name: "Saved name" } });
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await act(async () => { failCheck(new AuthError("Old request failed", status)); });
+
+  expect(screen.getByLabelText("Name")).toHaveValue("Saved name");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(router.replace).not.toHaveBeenCalled();
+  vi.mocked(loadProfile).mockResolvedValueOnce({ user: { ...user, name: "A newer response" } });
+  await act(async () => { fireEvent.focus(window); });
+  expect(screen.getByLabelText("Name")).toHaveValue("A newer response");
 });

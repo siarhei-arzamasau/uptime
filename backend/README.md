@@ -89,6 +89,8 @@ Routes: `POST /api/v1/auth/register`, `/login`, `/refresh`, `/logout`, and `GET 
 
 Registration and login accept JSON with `email` and `password`. Email is normalized; passwords contain 12–128 characters. Successful responses include `user`, `access_token`, `token_type`, and `expires_in`. Refresh returns only token fields. User data includes `id`, `email`, `name`, and `created_at`. The refresh token is available only through an HttpOnly cookie.
 
+Login and registration share a per-process admission limit: at most four concurrent operations and four new operations per second, with an initial burst of eight. Excess requests are rejected immediately with `429`, code `auth_busy`, and `Retry-After: 1`; there is no waiting queue. This bounds concurrent Argon2 working memory to approximately 256 MiB, in addition to normal API memory. Canceled requests are rejected before admission. Refresh, logout, and authenticated feature requests do not consume this capacity. Limits reset when the API restarts and are independent across replicas; this resource safeguard does not replace per-client abuse protection at a trusted public ingress.
+
 In another terminal:
 
 ```sh
@@ -128,7 +130,7 @@ JWTs last 15 minutes. Refresh sessions last 30 days from login without extension
 
 Logout is idempotent and revokes the current refresh session. Previously issued JWTs remain valid until their 15-minute expiry. Password recovery and email verification are not implemented yet.
 
-Errors use `{"error":{"code":"…","message":"…"}}`: 400 for validation, 401 for authentication, 403 for Origin/CSRF, 409 for an existing email, and 500 for internal failures without database details.
+Errors use `{"error":{"code":"…","message":"…"}}`: 400 for validation, 401 for authentication, 403 for Origin/CSRF, 409 for an existing email, 429 for authentication capacity limits, and 500 for internal failures without database details.
 
 ## Validation and migrations
 

@@ -122,6 +122,42 @@ test("redirects anonymous profile visits to login", async ({ page }) => {
   await page.goto("/profile"); await expect(page).toHaveURL(/\/login$/);
 });
 
+test("refreshes untouched profile fields and preserves drafts through an outage", async ({ page, context }, testInfo) => {
+  await register(page);
+  await page.goto("/profile");
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("");
+  const other = await context.newPage();
+  await other.goto("/profile");
+  await other.getByLabel("Name", { exact: true }).fill("Updated in another tab");
+  await other.getByLabel("Choose avatar").setInputFiles("e2e/fixtures/avatar.png");
+  await other.getByRole("button", { name: "Save changes" }).click();
+  await expect(other.getByRole("status")).toHaveText("Profile saved.");
+  const latestAvatar = await other.getByRole("main").getByAltText("Your avatar").getAttribute("src");
+  await page.bringToFront();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Updated in another tab");
+  await expect(page.getByRole("main").getByAltText("Your avatar")).toHaveAttribute("src", latestAvatar!);
+
+  await page.getByLabel("Name", { exact: true }).fill("Unsaved draft");
+  await page.getByLabel("Choose avatar").setInputFiles("e2e/fixtures/avatar.png");
+  await page.route("**/api/auth/profile", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Service temporarily unavailable" } }) }));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Service temporarily unavailable");
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Unsaved draft");
+  await expect(page.getByAltText("Selected avatar preview")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("profile-draft-outage.png"), fullPage: true });
+  await page.unroute("**/api/auth/profile");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Unsaved draft");
+  await expect(page.getByAltText("Selected avatar preview")).toBeVisible();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toHaveText("Profile saved.");
+  await page.reload();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Unsaved draft");
+  await expect(page.getByRole("main").getByAltText("Your avatar")).toBeVisible();
+});
+
 test("previews, saves and replaces a local avatar in profile and toolbar", async ({ page, context }, testInfo) => {
   const email = await register(page);
   await page.goto("/profile");
