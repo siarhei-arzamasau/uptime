@@ -1,0 +1,21 @@
+.container { position: relative; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.trigger { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 28px; background: var(--surface); color: var(--text); padding: 6px 14px 6px 6px; font-size: 14px; font-weight: 600; }
+.avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--soft); color: var(--accent); }
+.chevron { margin-left: 12px; color: var(--muted); }
+.panel { position: absolute; z-index: 10; top: calc(100% + 10px); right: 0; width: 360px; max-width: calc(100vw - 48px); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px; box-shadow: var(--shadow); }
+.identity { padding: 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 16px; }
+.identity a { font-size: 14px; }
+.name { grid-column: 1 / -1; }
+.identity strong { min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.action { flex-shrink: 0; border: 0; border-radius: 6px; padding: 11px 12px; color: var(--text); background: transparent; font-size: 14px; text-align: left; text-decoration: none; white-space: nowrap; }
+.action:hover { background: var(--soft); }
+.signOut { color: var(--error); }
+
+@media (max-width: 600px) {
+  .container { gap: 4px; }
+  .trigger { gap: 6px; padding-right: 10px; font-size: 13px; }
+  .chevron { margin-left: 2px; }
+  .action { padding-inline: 6px; font-size: 13px; }
+}
+
+.avatar img { border-radius: 50%; object-fit: cover; }

@@ -13,6 +13,7 @@ import (
 	"uptime-app/backend/internal/auth"
 	"uptime-app/backend/internal/config"
 	"uptime-app/backend/internal/httpx"
+	"uptime-app/backend/internal/profile"
 	"uptime-app/backend/internal/store"
 )
 
@@ -42,7 +43,9 @@ func run() error {
 		return fmt.Errorf("authentication initialization failed")
 	}
 	mux := http.NewServeMux()
-	auth.NewController(service, tokens, c.CookieSecure).RegisterRoutes(mux)
+	authController := auth.NewController(service, tokens, c.CookieSecure)
+	authController.RegisterRoutes(mux)
+	profile.NewController(s, c.AvatarDir).RegisterRoutes(mux, authController.Authenticate)
 	server := &http.Server{Addr: c.HTTPAddr, Handler: httpx.Protect(mux, c.Origin), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	failures := make(chan error, 1)
 	go func() { failures <- server.ListenAndServe() }()

@@ -13,6 +13,8 @@ import (
 
 type User struct {
 	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
+	AvatarFile   string
+	Name         string
 	Email        string
 	PasswordHash string
 	CreatedAt    time.Time
@@ -94,4 +96,44 @@ func (s *Store) Revoke(ctx context.Context, id uuid.UUID, now time.Time) error {
 }
 func (s *Store) UseToken(ctx context.Context, hash string, now time.Time) error {
 	return s.DB.WithContext(ctx).Model(&RefreshToken{}).Where("hash = ?", hash).Update("used_at", now).Error
+}
+
+// UpdateUserName changes only the authenticated user's editable profile field.
+func (s *Store) UpdateUserName(ctx context.Context, id uuid.UUID, name string) (User, error) {
+	var u User
+	result := s.DB.WithContext(ctx).Model(&u).Clauses(clause.Returning{}).Where("id = ?", id).Update("name", name)
+	if result.Error != nil {
+		return User{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return User{}, gorm.ErrRecordNotFound
+	}
+	return u, nil
+}
+
+// AvatarURL exposes an opaque image URL, never a filesystem path.
+func (u User) AvatarURL() string {
+	if u.AvatarFile == "" {
+		return ""
+	}
+	return "/api/v1/avatars/" + u.AvatarFile
+}
+
+// UpdateUserAvatar serializes replacements so each save cleans up its predecessor.
+func (s *Store) UpdateUserAvatar(ctx context.Context, id uuid.UUID, name, filename string) (User, string, error) {
+	var u User
+	var old string
+	err := s.Transaction(ctx, func(tx *Store) error {
+		if err := tx.DB.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&u).Error; err != nil {
+			return err
+		}
+		old = u.AvatarFile
+		if err := tx.DB.WithContext(ctx).Model(&u).Updates(map[string]any{"name": name, "avatar_file": filename}).Error; err != nil {
+			return err
+		}
+		u.Name = name
+		u.AvatarFile = filename
+		return nil
+	})
+	return u, old, err
 }

@@ -27,6 +27,8 @@ type identityKey struct{}
 type userResponse struct {
 	ID        uuid.UUID `json:"id"`
 	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	AvatarURL string    `json:"avatar_url"`
 	CreatedAt time.Time `json:"created_at"`
 }
 type tokenResponse struct {
@@ -36,7 +38,9 @@ type tokenResponse struct {
 	ExpiresIn   int           `json:"expires_in"`
 }
 
-func userDTO(u store.User) userResponse { return userResponse{u.ID, u.Email, u.CreatedAt} }
+func userDTO(u store.User) userResponse {
+	return userResponse{u.ID, u.Email, u.Name, u.AvatarURL(), u.CreatedAt}
+}
 
 // NewController creates the authentication module's HTTP controller.
 func NewController(service *Service, tokens *Tokens, cookieSecure bool) *Controller {
@@ -49,7 +53,7 @@ func (a *Controller) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/refresh", a.refresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.logout)
-	mux.Handle("GET /api/v1/auth/me", a.bearer(http.HandlerFunc(a.me)))
+	mux.Handle("GET /api/v1/auth/me", a.Authenticate(http.HandlerFunc(a.me)))
 }
 func decodeCredentials(w http.ResponseWriter, r *http.Request) (string, string, error) {
 	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
@@ -122,7 +126,9 @@ func (a *Controller) logout(w http.ResponseWriter, r *http.Request) {
 	a.clearCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
-func (a *Controller) bearer(next http.Handler) http.Handler {
+
+// Authenticate verifies an access token for protected feature routes.
+func (a *Controller) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Fields(r.Header.Get("Authorization"))
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
@@ -184,4 +190,10 @@ func handleError(w http.ResponseWriter, err error) {
 		slog.Error("authentication request failed")
 		httpx.WriteError(w, 500, "internal_error", "Internal server error")
 	}
+}
+
+// UserID returns the identity established by Authenticate.
+func UserID(ctx context.Context) (uuid.UUID, bool) {
+	id, ok := ctx.Value(identityKey{}).(uuid.UUID)
+	return id, ok
 }

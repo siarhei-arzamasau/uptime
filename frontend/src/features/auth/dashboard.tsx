@@ -1,11 +1,17 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AuthError, session, signOut, subscribeAuth } from "./client";
-import type { User } from "./types";
+import type { AuthResult, User } from "./types";
+import { UserMenu } from "./user-menu";
 import styles from "./auth.module.css";
 
-export function Dashboard() {
+export function Workspace({ title, load = session, children }: {
+  title: string;
+  load?: () => Promise<AuthResult>;
+  children?: (user: User, update: (user: User) => void) => ReactNode;
+}) {
   const router = useRouter();
   const [user, setUser] = useState<User>();
   const [error, setError] = useState("");
@@ -16,7 +22,7 @@ export function Dashboard() {
   const check = useCallback(async () => {
     const current = ++generation.current;
     try {
-      const result = await session();
+      const result = await load();
       if (!mounted.current || current !== generation.current) return;
       setUser(result.user); setError(""); paused.current = false;
     } catch (e) {
@@ -25,7 +31,7 @@ export function Dashboard() {
       if (e instanceof AuthError && e.status === 401) { router.replace("/login"); return; }
       paused.current = true; setError(e instanceof Error ? e.message : "Unable to load your workspace.");
     }
-  }, [router]);
+  }, [router, load]);
   useEffect(() => {
     mounted.current = true;
     let active = true;
@@ -43,10 +49,14 @@ export function Dashboard() {
     catch (e) { setError(e instanceof Error ? e.message : "Unable to sign out. Please try again."); }
     finally { setBusy(false); }
   }
+  const accountSlot = typeof document !== "undefined" ? document.getElementById("account-menu-slot") : null;
   return <main className={styles.dashboard}>
-    <div className={styles.dashboardHead}><div><p className={styles.eyebrow}>Your workspace</p><h1 className={styles.title}>Good to have you here.</h1></div>{user && <button className={styles.secondary} onClick={logout} disabled={busy}>{busy ? "Signing out…" : "Sign out"}</button>}</div>
+    {user && accountSlot && createPortal(<UserMenu user={user} busy={busy} onSignOut={logout} />, accountSlot)}
+    <div className={styles.dashboardHead}><div><p className={styles.eyebrow}>Your workspace</p><h1 className={styles.title}>{title}</h1></div></div>
     {error && <div role="alert" className={styles.alert}>{error} {!user && <button className={styles.secondary} onClick={() => void check()}>Try again</button>}</div>}
     {!user && !error && <p role="status">Loading your workspace…</p>}
-    {user && <section className={styles.account}><h2>Your account</h2><dl><dt>Email address</dt><dd>{user.email}</dd></dl><p className={styles.empty}>You’re signed in. Your workspace is ready for what comes next.</p></section>}
+    {user && children?.(user, setUser)}
   </main>;
 }
+
+export function Dashboard() { return <Workspace title="Good to have you here." />; }

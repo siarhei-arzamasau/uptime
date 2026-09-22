@@ -13,20 +13,20 @@ function notify() {
   const channel = new BroadcastChannel("uptime-auth");
   channel.postMessage("changed"); channel.close();
 }
-async function request(action: Action, body?: { email: string; password: string }): Promise<AuthResult> {
+async function request(action: Action, body?: { email: string; password: string } | { name: string } | FormData): Promise<AuthResult> {
   if (!navigator.locks) throw new AuthError("Please update your browser to securely sign in.", 0);
   return navigator.locks.request("uptime-auth", async () => {
     let res: Response;
     try {
-      res = await fetch(`/api/auth/${action}`, {
-        method: "POST", credentials: "same-origin", cache: "no-store",
-        headers: { "Content-Type": "application/json", "X-CSRF-Protection": "1" },
-        body: body ? JSON.stringify(body) : undefined,
+      res = await fetch(`/api/auth/${action === "profile-update" ? "profile" : action === "avatar" ? "profile/avatar" : action}`, {
+        method: action === "profile-update" ? "PATCH" : "POST", credentials: "same-origin", cache: "no-store",
+        headers: body instanceof FormData ? { "X-CSRF-Protection": "1" } : { "Content-Type": "application/json", "X-CSRF-Protection": "1" },
+        body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
       });
     } catch { throw new AuthError("Connection interrupted. Please try again.", 0); }
     const data = await res.json();
     if (!res.ok) throw new AuthError(data.error?.message ?? "Something went wrong. Please try again.", res.status);
-    if (action !== "session") notify();
+    if (action === "login" || action === "register" || action === "logout") notify();
     return data;
   });
 }
@@ -36,3 +36,11 @@ export function session(): Promise<AuthResult> {
 }
 export function signIn(action: "login" | "register", email: string, password: string) { return request(action, { email, password }); }
 export function signOut() { return request("logout"); }
+
+export function loadProfile() { return request("profile"); }
+export function updateProfile(name: string) { return request("profile-update", { name }); }
+
+export function uploadAvatar(name: string, file: File) {
+  const form = new FormData(); form.set("name", name); form.set("avatar", file);
+  return request("avatar", form);
+}

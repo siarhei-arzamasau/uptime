@@ -40,9 +40,16 @@ Web Locks serialize auth requests across tabs; BroadcastChannel transmits only c
 
 Theme defaults to the system and explicit choice is stored in a nonsecret `uptime_theme` cookie. Server rendering applies the preference before paint.
 
+## Profile
+
+Open **My account → Profile** to visit `/profile`. Email is read-only; name is optional and accepts up to 100 Unicode characters. Save changes persists the trimmed name in PostgreSQL, updates the toolbar, and shows confirmation. Failed saves keep the input for retry. The profile shares the dashboard session checks and header logout.
+
+The browser uses `POST /api/auth/profile` to read and `PATCH /api/auth/profile` with `{"name":"Alice"}` to save. Reads use POST because expired access may rotate session cookies. This route stays under `/api/auth` to receive the existing refresh cookie. Both methods require Origin and the CSRF header, run under the same Web Lock as authentication, and return only public user data. Go serves `GET/PATCH /api/v1/profile`; tokens remain HttpOnly. Restart the shared launcher after pulling the backend migration.
+
 ## Source organization
 
 - `src/features/auth/`: forms, dashboard, browser session client, server-only Go adapter and tests.
+- `src/features/profile/`: profile editor and component tests.
 - `src/app/api/auth/`: thin Route Handlers.
 - `src/components/`: theme control.
 - `e2e/`: real application Playwright scenarios.
@@ -66,3 +73,11 @@ E2E uses the same launcher with `--e2e`. It starts Go on 8081 and Next.js on 300
 Playwright runs Chromium desktop and mobile projects, retaining traces/screenshots on failure. Test reports, coverage, alternate Next output and secrets are gitignored. The UI outage scenario intercepts an error response; server-side connection failures and session preservation are independently verified by Vitest.
 
 The launcher requires local env files even for E2E. PATH must include Go. E2E cleanup stops the processes it started, not Docker; unexpected process failures and startup/port/configuration errors are also covered by launcher unit tests.
+
+## Avatar upload
+
+In **My account → Profile**, choose **Upload avatar**, select a JPEG/PNG, inspect the local preview, then use the existing **Save changes** button. Selection alone does not send a request. **Cancel selection** restores the saved avatar. Upload errors retain the selection for retry. Limits: 5 MB and 2048 × 2048 pixels; the Go API validates the actual image.
+
+With an image selected, the browser sends name and file together to `POST /api/auth/profile/avatar` using multipart data, under the authentication Web Lock. The server forwards it to Go and can refresh expired JWT cookies once. Successful saves update both profile and toolbar; name-only changes keep the existing avatar. Images are served from backend local storage through `GET /api/avatars/{filename}`; only validated image paths are proxied, with no tokens in URLs or browser JSON. Image URLs are public and versioned by random filenames.
+
+Restart `node scripts/dev.mjs` to apply the avatar migration and rebuild Go. Playwright covers preview/cancel, save with JWT renewal, invalid file rejection, replacement, reload and login persistence on desktop/mobile.

@@ -9,10 +9,11 @@ class APIError extends Error {
 }
 function user(value: unknown): User {
   const u = value as Partial<User> | undefined;
-  if (!u || typeof u.id !== "string" || typeof u.email !== "string" || typeof u.created_at !== "string") {
+  if (!u || typeof u.id !== "string" || typeof u.email !== "string" || typeof u.name !== "string" || typeof u.avatar_url !== "string" || typeof u.created_at !== "string") {
     throw new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again.");
   }
-  return { id: u.id, email: u.email, created_at: u.created_at };
+  if (u.avatar_url && !/^\/api\/v1\/avatars\/[0-9a-f-]{36}\.(png|jpg)$/.test(u.avatar_url)) throw new APIError(502, "invalid_response", "Invalid avatar response.");
+  return { avatar_url: u.avatar_url.replace("/api/v1/avatars/", "/api/avatars/"), id: u.id, email: u.email, name: u.name, created_at: u.created_at };
 }
 function response(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store", "Vary": "Cookie", "X-Content-Type-Options": "nosniff" } });
@@ -51,9 +52,12 @@ export async function handleAuth(req: NextRequest, action: Action) {
   async function call(path: string, init: RequestInit = {}) {
     let result: Response;
     try {
-      result = await fetch(`${backend}/api/v1/auth/${path}`, {
+      const headers = new Headers(init.headers);
+      headers.set("X-CSRF-Protection", "1");
+      if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+      result = await fetch(`${backend}/api/v1/${path.startsWith("profile") ? path : `auth/${path}`}`, {
         ...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
-        headers: { "Content-Type": "application/json", "X-CSRF-Protection": "1", ...init.headers },
+        headers,
       });
     } catch {
       throw new APIError(503, "unavailable", "We couldn’t reach the service. Please try again.");
@@ -61,7 +65,9 @@ export async function handleAuth(req: NextRequest, action: Action) {
     if (!result.ok) {
       if (result.status === 401) throw new APIError(401, "unauthorized", action === "login" ? "Incorrect email or password." : "Your session has ended. Please sign in again.");
       if (result.status === 409) throw new APIError(409, "email_exists", "An account with this email already exists. Sign in instead.");
-      if (result.status === 400) throw new APIError(400, "invalid_request", "Enter a valid email and a password of 12–128 characters.");
+      if (result.status === 413) throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
+      if (result.status === 400 && action === "avatar") throw new APIError(400, "invalid_avatar", "Choose a valid JPEG or PNG up to 2048 × 2048 pixels.");
+      if (result.status === 400) throw new APIError(400, "invalid_request", action === "profile-update" ? "Name must be at most 100 characters without control characters." : "Enter a valid email and a password of 12–128 characters.");
       throw new APIError(503, "unavailable", "The service is temporarily unavailable. Please try again.");
     }
     return result;
@@ -88,9 +94,29 @@ export async function handleAuth(req: NextRequest, action: Action) {
       await call("logout", { method: "POST", headers: refreshHeaders });
       const res = response({ ok: true }); clear(res, secure); return res;
     }
+    let profileBody: string | FormData | undefined;
+    if (action === "avatar") {
+      if (!req.headers.get("content-type")?.startsWith("multipart/form-data;")) throw new APIError(400, "invalid_request", "Expected an image upload.");
+      profileBody = await avatarForm(req);
+    }
+    if (action === "profile-update") {
+      if (!req.headers.get("content-type")?.startsWith("application/json")) throw new APIError(400, "invalid_request", "Expected a JSON request.");
+      const raw = await req.text();
+      if (raw.length > 4096) throw new APIError(400, "invalid_request", "Request is too large.");
+      let body: unknown;
+      try { body = JSON.parse(raw); } catch { throw new APIError(400, "invalid_request", "Invalid request."); }
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 1 || !("name" in body) || typeof body.name !== "string") throw new APIError(400, "invalid_request", "Provide only the name field as a string.");
+      const name = body.name.trim();
+      if ([...name].length > 100 || /\p{Cc}/u.test(name)) throw new APIError(400, "invalid_name", "Name must be at most 100 characters without control characters.");
+      profileBody = JSON.stringify({ name });
+    }
+    const protectedRequest = (token: string) => call(action === "session" ? "me" : action === "avatar" ? "profile/avatar" : "profile", {
+      method: action === "profile-update" ? "PATCH" : action === "avatar" ? "POST" : "GET",
+      headers: { Authorization: `Bearer ${token}` }, body: profileBody,
+    });
     if (access) {
       try {
-        const me = await call("me", { headers: { Authorization: `Bearer ${access}` } });
+        const me = await protectedRequest(access);
         return response({ user: user(await me.json()) });
       } catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
     }
@@ -99,7 +125,7 @@ export async function handleAuth(req: NextRequest, action: Action) {
     const pair = tokens(await upstream.json(), upstream);
     // Persist a successful rotation even if the following /me request fails transiently.
     try {
-      const me = await call("me", { headers: { Authorization: `Bearer ${pair.access}` } });
+      const me = await protectedRequest(pair.access);
       const res = response({ user: user(await me.json()) }); setTokens(res, pair, secure); return res;
     } catch (error) {
       if (error instanceof APIError && error.status !== 401) {
@@ -111,7 +137,48 @@ export async function handleAuth(req: NextRequest, action: Action) {
   } catch (error) {
     const e = error instanceof APIError ? error : new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again.");
     const res = response({ error: { code: e.code, message: e.message } }, e.status);
-    if (action === "session" && e.status === 401) clear(res, secure);
+    if (["session", "profile", "profile-update", "avatar"].includes(action) && e.status === 401) clear(res, secure);
     return res;
   }
+}
+
+// Enforce the upload limit while reading, including clients without Content-Length.
+async function avatarForm(req: NextRequest): Promise<FormData> {
+  const limit = 5 * 1024 * 1024 + 64 * 1024;
+  if (Number(req.headers.get("content-length")) > limit) throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
+  const reader = req.body?.getReader();
+  if (!reader) throw new APIError(400, "invalid_request", "Choose an image.");
+  const chunks: Uint8Array[] = []; let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) { await reader.cancel(); throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB."); }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(size); let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  let form: FormData;
+  try { form = await new Response(bytes, { headers: { "Content-Type": req.headers.get("content-type")! } }).formData(); }
+  catch { throw new APIError(400, "invalid_request", "Invalid image upload."); }
+  const file = form.get("avatar"), name = form.get("name");
+  if (!(file instanceof File) || typeof name !== "string" || [...form.keys()].length !== 2 || form.getAll("avatar").length !== 1 || form.getAll("name").length !== 1) throw new APIError(400, "invalid_request", "Provide only name and one avatar file.");
+  if (file.size > 5 * 1024 * 1024) throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
+  if (!["image/png", "image/jpeg"].includes(file.type) || !file.size) throw new APIError(400, "invalid_avatar", "Choose a JPEG or PNG image.");
+  if ([...name.trim()].length > 100 || /\p{Cc}/u.test(name.trim())) throw new APIError(400, "invalid_name", "Name must be at most 100 characters without control characters.");
+  form.set("name", name.trim());
+  return form;
+}
+
+export async function serveAvatar(filename: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg)$/.test(filename)) return new Response(null, { status: 404 });
+  try {
+    const upstream = await fetch(`${process.env.BACKEND_URL ?? "http://127.0.0.1:8080"}/api/v1/avatars/${filename}`, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000) });
+    if (!upstream.ok) return new Response(null, { status: upstream.status === 404 ? 404 : 503 });
+    const type = upstream.headers.get("content-type");
+    if (type !== "image/png" && type !== "image/jpeg") return new Response(null, { status: 502 });
+    return new Response(upstream.body, { headers: { "Content-Type": type, "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff", "Content-Disposition": "inline" } });
+  } catch { return new Response(null, { status: 503 }); }
 }

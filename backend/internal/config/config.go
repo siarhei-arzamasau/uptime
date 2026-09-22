@@ -10,11 +10,12 @@ import (
 
 type Config struct {
 	DatabaseURL, HTTPAddr, JWTSecret, Issuer, Audience, Origin string
+	AvatarDir                                                  string
 	CookieSecure                                               bool
 }
 
 func Load() (Config, error) {
-	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), HTTPAddr: env("HTTP_ADDR", "127.0.0.1:8080"), JWTSecret: os.Getenv("JWT_SECRET"), Issuer: env("JWT_ISSUER", "uptime-api"), Audience: env("JWT_AUDIENCE", "uptime-web"), Origin: env("ALLOWED_ORIGIN", "http://localhost:3000")}
+	c := Config{AvatarDir: env("AVATAR_DIR", "var/avatars"), DatabaseURL: os.Getenv("DATABASE_URL"), HTTPAddr: env("HTTP_ADDR", "127.0.0.1:8080"), JWTSecret: os.Getenv("JWT_SECRET"), Issuer: env("JWT_ISSUER", "uptime-api"), Audience: env("JWT_AUDIENCE", "uptime-web"), Origin: env("ALLOWED_ORIGIN", "http://localhost:3000")}
 	var err error
 	c.CookieSecure, err = strconv.ParseBool(env("COOKIE_SECURE", "true"))
 	if err != nil {

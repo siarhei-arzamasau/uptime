@@ -28,7 +28,7 @@ func Protect(next http.Handler, allowedOrigin string) http.Handler {
 				return
 			}
 			method := r.Header.Get("Access-Control-Request-Method")
-			if method != "GET" && method != "POST" {
+			if method != "GET" && method != "POST" && method != "PATCH" {
 				WriteError(w, 403, "forbidden", "Method is not allowed")
 				return
 			}
@@ -39,7 +39,7 @@ func Protect(next http.Handler, allowedOrigin string) http.Handler {
 					return
 				}
 			}
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Protection")
 			w.WriteHeader(http.StatusNoContent)
 			return

@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
-const backendKeys = ["GO_BIN", "DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "JWT_ISSUER", "JWT_AUDIENCE", "ALLOWED_ORIGIN", "COOKIE_SECURE", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"];
+const backendKeys = ["AVATAR_DIR", "GO_BIN", "DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "JWT_ISSUER", "JWT_AUDIENCE", "ALLOWED_ORIGIN", "COOKIE_SECURE", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"];
 const frontendKeys = ["BACKEND_URL", "APP_ORIGIN", "NEXT_DIST_DIR"];
 const commonKeys = ["PATH", "HOME", "USER", "TMPDIR", "SHELL", "LANG", "LC_ALL", "GOPATH", "GOCACHE", "GOMODCACHE", "GOPROXY", "GOTOOLCHAIN", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"];
 function pick(env, keys) { return Object.fromEntries(keys.filter(k => env[k] !== undefined).map(k => [k, env[k]])); }
@@ -19,6 +19,7 @@ export function configuration(backendText, frontendText, ambient, e2e = false) {
   f.APP_ORIGIN ||= "http://localhost:3000";
   f.BACKEND_URL ||= "http://127.0.0.1:8080";
   if (e2e) {
+    b.AVATAR_DIR = "var/e2e-avatars";
     const db = new URL(b.DATABASE_URL); db.pathname = "/uptime_e2e_test"; b.DATABASE_URL = db.toString();
     b.HTTP_ADDR = "127.0.0.1:8081"; b.ALLOWED_ORIGIN = "http://localhost:3001"; b.COOKIE_SECURE = "false";
     f.APP_ORIGIN = "http://localhost:3001"; f.BACKEND_URL = "http://127.0.0.1:8081"; f.NEXT_DIST_DIR = ".next-e2e";
