@@ -10,11 +10,11 @@ vi.mock("../auth/client", async original => ({ ...await original<typeof import("
 const user = { id: "1", email: "alice@example.com", name: "Alice", avatar_url: "", created_at: "2026-01-01" };
 beforeEach(() => vi.clearAllMocks());
 it("shows email read-only and saves the trimmed name with Enter", async () => {
-  const onSaved = vi.fn(); vi.mocked(updateProfile).mockResolvedValue({ user: { ...user, name: "Сергей" } });
+  const onSaved = vi.fn(); vi.mocked(updateProfile).mockResolvedValue({ user: { ...user, name: "\u0421\u0435\u0440\u0433\u0435\u0439" } });
   render(<ProfileForm user={user} onSaved={onSaved} />);
   expect(screen.getByLabelText("Email address")).toHaveAttribute("readonly");
-  const name = screen.getByLabelText("Name"); await userEvent.clear(name); await userEvent.type(name, " Сергей {Enter}");
-  expect(updateProfile).toHaveBeenCalledWith("Сергей"); expect(await screen.findByRole("status")).toHaveTextContent("Profile saved."); expect(onSaved).toHaveBeenCalledWith({ ...user, name: "Сергей" });
+  const name = screen.getByLabelText("Name"); await userEvent.clear(name); await userEvent.type(name, " \u0421\u0435\u0440\u0433\u0435\u0439 {Enter}");
+  expect(updateProfile).toHaveBeenCalledWith("\u0421\u0435\u0440\u0433\u0435\u0439"); expect(await screen.findByRole("status")).toHaveTextContent("Profile saved."); expect(onSaved).toHaveBeenCalledWith({ ...user, name: "\u0421\u0435\u0440\u0433\u0435\u0439" });
 });
 it("validates length accessibly and keeps the entered value", async () => {
   render(<ProfileForm user={user} onSaved={vi.fn()} />);

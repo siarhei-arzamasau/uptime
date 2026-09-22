@@ -13,9 +13,9 @@ func TestCredentials(t *testing.T) {
 		email, password string
 		valid           bool
 	}{
-		{" Alice@Example.com ", strings.Repeat("a", 12), true}, {"a@example.com", strings.Repeat("я", 128), true},
+		{" Alice@Example.com ", strings.Repeat("a", 12), true}, {"a@example.com", strings.Repeat("\u044f", 128), true},
 		{"bad", strings.Repeat("a", 12), false}, {"Name <a@example.com>", strings.Repeat("a", 12), false},
-		{"a@example.com", strings.Repeat("a", 11), false}, {"a@example.com", strings.Repeat("я", 129), false}, {"a@example.com", "", false},
+		{"a@example.com", strings.Repeat("a", 11), false}, {"a@example.com", strings.Repeat("\u044f", 129), false}, {"a@example.com", "", false},
 	} {
 		email, err := Credentials(tc.email, tc.password)
 		if (err == nil) != tc.valid {

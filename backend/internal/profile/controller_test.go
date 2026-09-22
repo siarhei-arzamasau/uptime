@@ -13,7 +13,7 @@ func TestValidName(t *testing.T) {
 		name  string
 		valid bool
 	}{
-		{"", true}, {"Сергей O’Connor", true}, {strings.Repeat("界", 100), true},
+		{"", true}, {"\u0421\u0435\u0440\u0433\u0435\u0439 O’Connor", true}, {strings.Repeat("界", 100), true},
 		{strings.Repeat("界", 101), false}, {"line\nfeed", false}, {"null\x00byte", false},
 	} {
 		if validName(tc.name) != tc.valid {

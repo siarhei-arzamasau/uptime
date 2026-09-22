@@ -410,7 +410,7 @@ func TestProfile(t *testing.T) {
 	for _, body := range []string{`{}`, `null`, `{"name":null}`, `{"name":123}`, `{"name":"Alice","email":"hijack@example.com"}`, `{"name":"Alice","id":"` + bob.User.ID.String() + `"}`, `{"name":"x"}{}`, `{"name":"line\nfeed"}`, `{"name":"` + strings.Repeat("界", 101) + `"}`} {
 		checkStatus(t, request(f.handler, "PATCH", endpoint, body, alice.Access, nil, csrf), 400)
 	}
-	updated := request(f.handler, "PATCH", endpoint, `{"name":"  Сергей Smith  "}`, alice.Access, nil, csrf)
+	updated := request(f.handler, "PATCH", endpoint, `{"name":"  \u0421\u0435\u0440\u0433\u0435\u0439 Smith  "}`, alice.Access, nil, csrf)
 	checkStatus(t, updated, 200)
 	if strings.Contains(updated.Body.String(), "password") || strings.Contains(updated.Body.String(), "access_token") {
 		t.Fatal("profile leaked secrets")
@@ -421,7 +421,7 @@ func TestProfile(t *testing.T) {
 	}
 	defer reopened.Close()
 	saved, err := reopened.UserByID(context.Background(), alice.User.ID)
-	if err != nil || saved.Name != "Сергей Smith" || saved.Email != alice.User.Email || saved.PasswordHash != alice.User.PasswordHash {
+	if err != nil || saved.Name != "\u0421\u0435\u0440\u0433\u0435\u0439 Smith" || saved.Email != alice.User.Email || saved.PasswordHash != alice.User.PasswordHash {
 		t.Fatal("name was not persisted independently", err)
 	}
 	other, err := reopened.UserByID(context.Background(), bob.User.ID)
