@@ -2,6 +2,14 @@
 
 Next.js 16 / React 19 authentication UI with light and dark themes. The interface is English. Go remains the authority for users, passwords and refresh sessions.
 
+## Website monitors
+
+On `/dashboard`, choose **Add website**, enter an HTTP/HTTPS URL, and set a positive whole-number interval with seconds, minutes, or hours. Select **Create** to save the monitor and show it in the list. Settings persist after reload and are private to the signed-in user. Checks are not running yet; the list shows **Not checked yet**.
+
+Intervals are stored as seconds (1–2,147,483,647); the form validates the maximum for the selected unit. `POST /api/auth/monitors` lists monitors and `POST /api/auth/monitors/create` creates one. Both use the existing authentication Web Lock and server-only adapter, including HttpOnly cookie refresh and CSRF checks. Reads use POST because session refresh may rotate cookies. No tokens are sent in response JSON.
+
+Restart the combined launcher to apply migration `00004_monitors.sql`. Component and API tests cover validation and error recovery; Playwright covers custom intervals in all three units, reload persistence, session refresh, account isolation, and desktop/mobile layouts.
+
 ## Requirements and local setup
 
 Use Node.js 22.12+ (tested with 24), npm, Go 1.26+, and Docker Compose. Install frontend dependencies with `npm ci`. Configure `backend/.env` as described in the backend README, then create `frontend/.env.local` from `.env.example` without overwriting existing configuration:

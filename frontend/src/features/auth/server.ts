@@ -1,6 +1,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import type { Action, User } from "./types";
+import { MAX_INTERVAL_SECONDS, validMonitorURL, type Monitor } from "../monitors/types";
 
 const ACCESS = "uptime_access";
 const REFRESH = "uptime_refresh";
@@ -14,6 +15,13 @@ function user(value: unknown): User {
   }
   if (u.avatar_url && !/^\/api\/v1\/avatars\/[0-9a-f-]{36}\.(png|jpg)$/.test(u.avatar_url)) throw new APIError(502, "invalid_response", "Invalid avatar response.");
   return { avatar_url: u.avatar_url.replace("/api/v1/avatars/", "/api/avatars/"), id: u.id, email: u.email, name: u.name, created_at: u.created_at };
+}
+function monitor(value: unknown): Monitor {
+  const m = value as Partial<Monitor> | undefined;
+  if (!m || typeof m.id !== "string" || typeof m.url !== "string" || !validMonitorURL(m.url) || typeof m.created_at !== "string" || typeof m.interval_seconds !== "number" || !Number.isInteger(m.interval_seconds) || m.interval_seconds < 1 || m.interval_seconds > MAX_INTERVAL_SECONDS) {
+    throw new APIError(502, "invalid_response", "The service returned an unexpected monitor. Please try again.");
+  }
+  return { id: m.id, url: m.url, interval_seconds: m.interval_seconds, created_at: m.created_at };
 }
 function response(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store", "Vary": "Cookie", "X-Content-Type-Options": "nosniff" } });
@@ -55,7 +63,7 @@ export async function handleAuth(req: NextRequest, action: Action) {
       const headers = new Headers(init.headers);
       headers.set("X-CSRF-Protection", "1");
       if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-      result = await fetch(`${backend}/api/v1/${path.startsWith("profile") ? path : `auth/${path}`}`, {
+      result = await fetch(`${backend}/api/v1/${path.startsWith("profile") || path === "monitors" ? path : `auth/${path}`}`, {
         ...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
         headers,
       });
@@ -67,6 +75,7 @@ export async function handleAuth(req: NextRequest, action: Action) {
       if (result.status === 409) throw new APIError(409, "email_exists", "An account with this email already exists. Sign in instead.");
       if (result.status === 413) throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
       if (result.status === 400 && action === "avatar") throw new APIError(400, "invalid_avatar", "Choose a valid JPEG or PNG up to 2048 × 2048 pixels.");
+      if (result.status === 400 && action === "monitor-create") throw new APIError(400, "invalid_monitor", "Enter a valid HTTP or HTTPS URL and a positive whole-number interval.");
       if (result.status === 400) throw new APIError(400, "invalid_request", action === "profile-update" ? "Name must be at most 100 characters without control characters." : "Enter a valid email and a password of 12–128 characters.");
       throw new APIError(503, "unavailable", "The service is temporarily unavailable. Please try again.");
     }
@@ -95,6 +104,18 @@ export async function handleAuth(req: NextRequest, action: Action) {
       const res = response({ ok: true }); clear(res, secure); return res;
     }
     let profileBody: string | FormData | undefined;
+    if (action === "monitor-create") {
+      if (!req.headers.get("content-type")?.startsWith("application/json")) throw new APIError(400, "invalid_request", "Expected a JSON request.");
+      const raw = await req.text();
+      if (raw.length > 16 * 1024) throw new APIError(400, "invalid_request", "Request is too large.");
+      let body: unknown;
+      try { body = JSON.parse(raw); } catch { throw new APIError(400, "invalid_request", "Invalid request."); }
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 2 || !("url" in body) || typeof body.url !== "string" || !("interval_seconds" in body) || typeof body.interval_seconds !== "number") throw new APIError(400, "invalid_request", "Provide only a URL and check interval.");
+      const url = body.url.trim(), interval = body.interval_seconds;
+      if (!validMonitorURL(url)) throw new APIError(400, "invalid_url", "Enter an HTTP or HTTPS URL up to 2048 bytes without credentials or a fragment.");
+      if (!Number.isInteger(interval) || interval < 1 || interval > MAX_INTERVAL_SECONDS) throw new APIError(400, "invalid_interval", "Enter a positive whole-number interval up to 2147483647 seconds.");
+      profileBody = JSON.stringify({ url, interval_seconds: interval });
+    }
     if (action === "avatar") {
       if (!req.headers.get("content-type")?.startsWith("multipart/form-data;")) throw new APIError(400, "invalid_request", "Expected an image upload.");
       profileBody = await avatarForm(req);
@@ -110,14 +131,25 @@ export async function handleAuth(req: NextRequest, action: Action) {
       if ([...name].length > 100 || /\p{Cc}/u.test(name)) throw new APIError(400, "invalid_name", "Name must be at most 100 characters without control characters.");
       profileBody = JSON.stringify({ name });
     }
-    const protectedRequest = (token: string) => call(action === "session" ? "me" : action === "avatar" ? "profile/avatar" : "profile", {
-      method: action === "profile-update" ? "PATCH" : action === "avatar" ? "POST" : "GET",
+    const protectedRequest = (token: string) => call(action === "session" ? "me" : action === "avatar" ? "profile/avatar" : action === "monitors" || action === "monitor-create" ? "monitors" : "profile", {
+      method: action === "profile-update" ? "PATCH" : action === "avatar" || action === "monitor-create" ? "POST" : "GET",
       headers: { Authorization: `Bearer ${token}` }, body: profileBody,
     });
+    async function protectedResponse(upstream: Response) {
+      let data;
+      try { data = await upstream.json(); }
+      catch { throw new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again."); }
+      if (action === "monitor-create") return response({ monitor: monitor(data) }, 201);
+      if (action === "monitors") {
+        if (!Array.isArray(data?.monitors)) throw new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again.");
+        return response({ monitors: data.monitors.map(monitor) });
+      }
+      return response({ user: user(data) });
+    }
     if (access) {
       try {
         const me = await protectedRequest(access);
-        return response({ user: user(await me.json()) });
+        return await protectedResponse(me);
       } catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
     }
     if (!refresh) throw new APIError(401, "unauthorized", "Please sign in to continue.");
@@ -126,7 +158,7 @@ export async function handleAuth(req: NextRequest, action: Action) {
     // Persist a successful rotation even if the following /me request fails transiently.
     try {
       const me = await protectedRequest(pair.access);
-      const res = response({ user: user(await me.json()) }); setTokens(res, pair, secure); return res;
+      const res = await protectedResponse(me); setTokens(res, pair, secure); return res;
     } catch (error) {
       if (error instanceof APIError && error.status !== 401) {
         const res = response({ error: { code: error.code, message: error.message } }, error.status);
@@ -137,7 +169,7 @@ export async function handleAuth(req: NextRequest, action: Action) {
   } catch (error) {
     const e = error instanceof APIError ? error : new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again.");
     const res = response({ error: { code: e.code, message: e.message } }, e.status);
-    if (["session", "profile", "profile-update", "avatar"].includes(action) && e.status === 401) clear(res, secure);
+    if (["session", "profile", "profile-update", "avatar", "monitors", "monitor-create"].includes(action) && e.status === 401) clear(res, secure);
     return res;
   }
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { session, signIn, signOut, subscribeAuth } from "./client";
+import { session, signIn, signOut, subscribeAuth, loadMonitors, createMonitor } from "./client";
 const listeners: FakeChannel[] = [];
 class FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null = null;
@@ -33,4 +33,13 @@ it("subscribes only to known events and closes the channel", () => {
 });
 it("fails safely without Web Locks", async () => {
   Object.defineProperty(navigator, "locks", { configurable: true, value: undefined }); await expect(session()).rejects.toThrow("update your browser"); expect(fetchMock).not.toHaveBeenCalled();
+});
+it("serializes monitor requests under the same authentication lock", async () => {
+  fetchMock.mockImplementation(async () => Response.json({ monitors: [] }));
+  await loadMonitors(); await createMonitor({ url: "https://example.com", interval_seconds: 7 });
+  expect(navigator.locks.request).toHaveBeenNthCalledWith(1, "uptime-auth", expect.any(Function));
+  expect(navigator.locks.request).toHaveBeenNthCalledWith(2, "uptime-auth", expect.any(Function));
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/monitors");
+  expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/monitors/create");
+  expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "POST", credentials: "same-origin", body: JSON.stringify({ url: "https://example.com", interval_seconds: 7 }) });
 });
