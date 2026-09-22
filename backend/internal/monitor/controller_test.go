@@ -1,6 +1,8 @@
 package monitor
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -20,6 +22,25 @@ func TestValidURL(t *testing.T) {
 	} {
 		if got := validURL(tc.value); got != tc.valid {
 			t.Errorf("validURL(%q) = %v, want %v", tc.value, got, tc.valid)
+		}
+	}
+}
+
+func TestURLContract(t *testing.T) {
+	data, err := os.ReadFile("../../../contracts/monitor-urls.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Value string `json:"value"`
+		Valid bool   `json:"valid"`
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		if got := validURL(tc.Value); got != tc.Valid {
+			t.Errorf("validURL(%q) = %v, want %v", tc.Value, got, tc.Valid)
 		}
 	}
 }

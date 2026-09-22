@@ -58,3 +58,28 @@ test("creates configurable website monitors, persists them and isolates accounts
   await expect(page.getByRole("heading", { name: "No websites yet" })).toBeVisible();
   await expect(page.getByText("https://example.com/health/0", { exact: true })).toHaveCount(0);
 });
+
+test("loads large monitor lists in bounded pages", async ({ page }, testInfo) => {
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(`monitor-pages-${randomUUID()}@example.com`);
+  await page.getByLabel("Password", { exact: true }).fill("correct horse battery staple");
+  await page.getByLabel("Confirm password").fill("correct horse battery staple");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "No websites yet" })).toBeVisible();
+  for (let index = 0; index < 51; index++) {
+    const response = await page.request.post("/api/auth/monitors/create", {
+      headers: { Origin: "http://localhost:3001", "X-CSRF-Protection": "1" },
+      data: { url: `https://example.com/page/${index}`, interval_seconds: 60 },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.reload();
+  await expect(page.getByRole("listitem")).toHaveCount(50);
+  const more = page.getByRole("button", { name: "Load more" });
+  await more.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("website-monitor-pagination.png") });
+  await more.click();
+  await expect(page.getByRole("listitem")).toHaveCount(51);
+  await expect(more).toHaveCount(0);
+  await expect(page.getByText("https://example.com/page/0", { exact: true })).toBeVisible();
+});

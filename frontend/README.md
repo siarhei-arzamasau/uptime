@@ -89,3 +89,21 @@ In **My account → Profile**, choose **Upload avatar**, select a JPEG/PNG, insp
 With an image selected, the browser sends name and file together to `POST /api/auth/profile/avatar` using multipart data, under the authentication Web Lock. The server forwards it to Go and can refresh expired JWT cookies once. Successful saves update both profile and toolbar; name-only changes keep the existing avatar. Images are served from backend local storage through `GET /api/avatars/{filename}`; only validated image paths are proxied, with no tokens in URLs or browser JSON. Image URLs are public and versioned by random filenames.
 
 Restart `node scripts/dev.mjs` to apply the avatar migration and rebuild Go. Playwright covers preview/cancel, save with JWT renewal, invalid file rejection, replacement, reload and login persistence on desktop/mobile.
+
+### Monitor request boundaries
+
+Monitor clients, response validation and components live in `src/features/monitors/`.
+The server-only auth adapter owns Go requests, token rotation and cookies; the shared
+client transport serializes requests with the existing `uptime-auth` Web Lock.
+Monitor routes remain under `/api/auth` to retain the refresh cookie's path.
+
+JSON bodies are read through a byte-limited stream reader (16 KiB for monitors,
+4 KiB for auth/profile JSON), including requests without a reliable Content-Length.
+Oversized bodies receive `413`. Avatar uploads share the same reader with their
+existing upload limit.
+
+Monitor lists load 50 entries at a time and expose a **Load more** button when another
+page exists. Creation URL rules are tested against `../contracts/monitor-urls.json`:
+international domains use punycode; Unicode paths are supported. Response validation
+checks field shapes without reapplying creation URL policy, so legacy saved URLs
+remain displayable as text.

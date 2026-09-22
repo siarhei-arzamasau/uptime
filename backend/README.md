@@ -68,9 +68,9 @@ Production requires HTTPS and `COOKIE_SECURE=true`; `sslmode=disable` in the exa
 ## Website monitors
 
 - `POST /api/v1/monitors`: create a monitor with JSON `{"url":"https://example.com","interval_seconds":7}`; returns the monitor with status `201`.
-- `GET /api/v1/monitors`: list the authenticated user's monitors, newest first, as `{"monitors":[...]}`. An empty list is `[]`.
+- `GET /api/v1/monitors`: list up to 50 of the authenticated user's monitors, newest first, as `{"monitors":[...],"next_cursor":"..."}`. Use `?cursor=<next_cursor>` for the next page; `next_cursor` is omitted on the last page. An empty list is `[]`. Cursors retain the `(created_at, id)` order and never override ownership.
 
-Both endpoints require a Bearer JWT. Creation also requires an allowed Origin or `X-CSRF-Protection: 1`. Ownership comes only from the verified JWT; extra request fields are rejected. URLs must be absolute HTTP/HTTPS URLs up to 2048 bytes after trimming, without embedded credentials, whitespace, or fragments. Intervals are whole numbers from 1 to 2,147,483,647 seconds; the frontend converts user-entered seconds, minutes, or hours to seconds. Each monitor exposes `id`, `url`, `interval_seconds`, and `created_at`.
+Both endpoints require a Bearer JWT. Creation also requires an allowed Origin or `X-CSRF-Protection: 1`. Ownership comes only from the verified JWT; extra request fields are rejected. URLs must be absolute HTTP/HTTPS URLs up to 2048 bytes after trimming, without embedded credentials, whitespace, or fragments. Hosts use ASCII DNS names (punycode for international domains), canonical dotted-decimal IPv4, or bracketed IPv6. Ambiguous numeric hosts, empty ports and malformed percent escapes are rejected; Unicode paths are supported. Shared URL cases live in `../contracts/monitor-urls.json` and run in Go and frontend tests. Intervals are whole numbers from 1 to 2,147,483,647 seconds; the frontend converts user-entered seconds, minutes, or hours to seconds. Each monitor exposes `id`, `url`, `interval_seconds`, and `created_at`.
 
 Migration `00004_monitors.sql` creates the monitor table and owner/list-order index. Restart `node scripts/dev.mjs` to apply it. Only configuration is saved: there are no outbound checks, workers, or uptime results yet.
 

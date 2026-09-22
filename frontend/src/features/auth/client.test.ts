@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { session, signIn, signOut, subscribeAuth, loadMonitors, createMonitor } from "./client";
+import { session, signIn, signOut, subscribeAuth } from "./client";
+import { loadMonitors, createMonitor } from "../monitors/client";
 const listeners: FakeChannel[] = [];
 class FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null = null;

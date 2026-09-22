@@ -3,11 +3,12 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Monitors } from "./monitors";
-import { AuthError, createMonitor, loadMonitors } from "../auth/client";
+import { AuthError } from "../auth/transport";
+import { createMonitor, loadMonitors } from "./client";
 
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-vi.mock("../auth/client", async original => ({ ...await original<typeof import("../auth/client")>(), loadMonitors: vi.fn(), createMonitor: vi.fn() }));
+vi.mock("./client", () => ({ loadMonitors: vi.fn(), createMonitor: vi.fn() }));
 const monitor = { id: "monitor-id", url: "https://example.com", interval_seconds: 7, created_at: "2026-09-22" };
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(loadMonitors).mockResolvedValue({ monitors: [] }); vi.mocked(createMonitor).mockResolvedValue({ monitor }); });
 async function openForm() {
@@ -75,4 +76,19 @@ it("redirects an expired session without showing saved monitors", async () => {
   vi.mocked(loadMonitors).mockRejectedValueOnce(new AuthError("Session ended", 401));
   render(<Monitors />); await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
   expect(screen.queryByText(monitor.url)).not.toBeInTheDocument();
+});
+
+it("appends the next page and keeps existing rows when a page request fails", async () => {
+  vi.mocked(loadMonitors).mockResolvedValueOnce({ monitors: [monitor], next_cursor: "page-2" })
+    .mockRejectedValueOnce(new Error("Service unavailable"))
+    .mockResolvedValueOnce({ monitors: [{ ...monitor, id: "second", url: "https://second.example" }] });
+  render(<Monitors />);
+  await userEvent.click(await screen.findByRole("button", { name: "Load more" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Service unavailable");
+  expect(screen.getByText(monitor.url)).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Load more" }));
+  expect(await screen.findByText("https://second.example")).toBeVisible();
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  expect(loadMonitors).toHaveBeenLastCalledWith("page-2");
+  expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
 });

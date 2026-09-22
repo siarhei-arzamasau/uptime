@@ -19,8 +19,20 @@ func (s *Store) CreateMonitor(ctx context.Context, monitor *Monitor) error {
 	return s.DB.WithContext(ctx).Create(monitor).Error
 }
 
-func (s *Store) MonitorsByUser(ctx context.Context, userID uuid.UUID) ([]Monitor, error) {
+const MonitorPageSize = 50
+
+type MonitorCursor struct {
+	CreatedAt time.Time
+	ID        uuid.UUID
+}
+
+func (s *Store) MonitorsByUser(ctx context.Context, userID uuid.UUID, after *MonitorCursor) ([]Monitor, error) {
 	monitors := make([]Monitor, 0)
-	err := s.DB.WithContext(ctx).Where("user_id = ?", userID).Order("created_at DESC, id DESC").Find(&monitors).Error
+	query := s.DB.WithContext(ctx).Where("user_id = ?", userID)
+	if after != nil {
+		query = query.Where("(created_at, id) < (?, ?)", after.CreatedAt, after.ID)
+	}
+	// Fetch one extra row so callers can determine whether another page exists.
+	err := query.Order("created_at DESC, id DESC").Limit(MonitorPageSize + 1).Find(&monitors).Error
 	return monitors, err
 }

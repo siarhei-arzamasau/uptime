@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"strings"
 	"testing"
+	"time"
 
 	"uptime-app/backend/internal/store"
 )
@@ -44,7 +46,7 @@ func TestMonitorCreationPersistenceAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	rows, err := reopened.MonitorsByUser(context.Background(), owner.User.ID)
+	rows, err := reopened.MonitorsByUser(context.Background(), owner.User.ID, nil)
 	if err != nil || len(rows) != 8 {
 		t.Fatalf("persisted monitors: %d, error: %v", len(rows), err)
 	}
@@ -75,7 +77,7 @@ func TestMonitorRejectsInvalidRequests(t *testing.T) {
 	checkStatus(t, request(f.handler, "POST", "/api/v1/monitors", valid, owner.Access, nil, map[string]string{"Origin": "https://evil.example"}), 403)
 	for _, body := range []string{
 		`null`, `{}`, `[]`, `{"url":"https://example.com"}`, `{"url":null,"interval_seconds":7}`,
-		`{"url":"javascript:alert(1)","interval_seconds":7}`, `{"url":"https://user:secret@example.com","interval_seconds":7}`,
+		`{"url":"https://127.0.0.999","interval_seconds":7}`, `{"url":"javascript:alert(1)","interval_seconds":7}`, `{"url":"https://user:secret@example.com","interval_seconds":7}`,
 		`{"url":"https://example.com","interval_seconds":0}`, `{"url":"https://example.com","interval_seconds":-1}`,
 		`{"url":"https://example.com","interval_seconds":1.5}`, `{"url":"https://example.com","interval_seconds":2147483648}`,
 		`{"url":"https://example.com","interval_seconds":"7"}`, `{"url":"https://example.com","interval_seconds":7,"user_id":"other"}`,
@@ -84,8 +86,67 @@ func TestMonitorRejectsInvalidRequests(t *testing.T) {
 		checkStatus(t, request(f.handler, "POST", "/api/v1/monitors", body, owner.Access, nil, headers), 400)
 	}
 	checkStatus(t, request(f.handler, "POST", "/api/v1/monitors", valid, owner.Access, nil, map[string]string{"X-CSRF-Protection": "1", "Content-Type": "text/plain"}), 400)
-	rows, err := f.s.MonitorsByUser(context.Background(), owner.User.ID)
+	rows, err := f.s.MonitorsByUser(context.Background(), owner.User.ID, nil)
 	if err != nil || len(rows) != 0 {
 		t.Fatal("invalid request persisted a monitor")
+	}
+}
+
+func TestMonitorPagination(t *testing.T) {
+	f := setup(t)
+	owner := f.register(t, "pages@example.com")
+	other := f.register(t, "other-pages@example.com")
+	// Tied timestamps exercise the UUID tie-breaker and exact page boundaries.
+	created := time.Now().UTC().Truncate(time.Microsecond)
+	for i := 0; i < 105; i++ {
+		m := store.Monitor{ID: uuid.New(), UserID: owner.User.ID, URL: fmt.Sprintf("https://example.com/%d", i), IntervalSeconds: 7, CreatedAt: created}
+		if err := f.s.CreateMonitor(context.Background(), &m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type page struct {
+		Monitors   []store.Monitor `json:"monitors"`
+		NextCursor string          `json:"next_cursor"`
+	}
+	seen := map[uuid.UUID]bool{}
+	cursor := ""
+	for index, size := range []int{50, 50, 5} {
+		listed := request(f.handler, "GET", "/api/v1/monitors?cursor="+cursor, "", owner.Access, nil, nil)
+		checkStatus(t, listed, 200)
+		var result page
+		if err := json.Unmarshal(listed.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Monitors) != size {
+			t.Fatalf("page %d size: %d", index, len(result.Monitors))
+		}
+		for _, m := range result.Monitors {
+			if seen[m.ID] {
+				t.Fatal("duplicate row across pages")
+			}
+			seen[m.ID] = true
+		}
+		if index < 2 && result.NextCursor == "" {
+			t.Fatal("missing next cursor")
+		}
+		cursor = result.NextCursor
+		if index == 0 {
+			// An insert ahead of the cursor must not shift or repeat subsequent pages.
+			m := store.Monitor{ID: uuid.New(), UserID: owner.User.ID, URL: "https://new.example", IntervalSeconds: 1, CreatedAt: created.Add(time.Second)}
+			if err := f.s.CreateMonitor(context.Background(), &m); err != nil {
+				t.Fatal(err)
+			}
+			private := request(f.handler, "GET", "/api/v1/monitors?cursor="+cursor, "", other.Access, nil, nil)
+			checkStatus(t, private, 200)
+			if strings.TrimSpace(private.Body.String()) != `{"monitors":[]}` {
+				t.Fatal("cursor bypassed ownership")
+			}
+		}
+	}
+	if cursor != "" || len(seen) != 105 {
+		t.Fatal("incomplete pagination")
+	}
+	for _, invalid := range []string{"bad", "!", strings.Repeat("a", 129)} {
+		checkStatus(t, request(f.handler, "GET", "/api/v1/monitors?cursor="+invalid, "", owner.Access, nil, nil), 400)
 	}
 }
