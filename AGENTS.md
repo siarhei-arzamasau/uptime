@@ -19,6 +19,14 @@ Run the checks documented in each affected project's guide from that project's d
 
 Use concise imperative commit messages with a type and optional scope, for example `docs: update contributor guidelines` or `feat(auth): add registration`. Keep changes focused. PRs should describe purpose, affected projects, and validation performed; link relevant issues.
 
+## GitHub Flow & Branch Naming
+
+- Before starting a new task, create a dedicated branch from the up-to-date `main` branch. Do not implement changes or commit directly on `main`.
+- Name branches `feat/<feature-name>` for features and improvements (including documentation), or `fix/<fix-name>` for bug fixes. Use short, descriptive English names in lowercase kebab-case, for example `feat/avatar-upload` or `fix/profile-validation`.
+- Keep one task per branch. Continue follow-up work for the same task on its existing branch.
+- Commit changes according to the conventions below and run the required checks before requesting review.
+- Push the branch and open a pull request targeting `main`. Describe the changes and validation results, and link the relevant task or issue.
+
 ## Security & Configuration
 
 Never commit secrets, dependency directories, or build outputs. Keep project-specific configuration and dependencies within the owning project.
