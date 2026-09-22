@@ -1,10 +1,11 @@
 # Backend
 
-Go registration and authentication API: PostgreSQL 17, GORM, JWT, and refresh sessions.
+Go API for authentication, profiles, and website monitors: PostgreSQL 17, GORM, JWT, and refresh sessions.
 
 ## Structure
 
 - `internal/auth/`: authentication service, tokens, HTTP controller, and its integration tests.
+- `internal/monitor/`: authenticated website monitor creation and listing.
 - `internal/httpx/`: shared CORS/CSRF middleware and JSON response helpers, without domain controllers.
 - `internal/store/`: GORM models and repositories; `internal/config/`: configuration.
 - `cmd/api/`: application wiring and module route registration on the shared mux.
@@ -63,6 +64,15 @@ The API listens on `127.0.0.1:8080`. The application and migration command read 
 | `COOKIE_SECURE` | Defaults to `true`; `.env.example` uses `false` for local HTTP |
 
 Production requires HTTPS and `COOKIE_SECURE=true`; `sslmode=disable` in the example is for the local database. Never commit secrets, `.env`, or cookie jar contents.
+
+## Website monitors
+
+- `POST /api/v1/monitors`: create a monitor with JSON `{"url":"https://example.com","interval_seconds":7}`; returns the monitor with status `201`.
+- `GET /api/v1/monitors`: list up to 50 of the authenticated user's monitors, newest first, as `{"monitors":[...],"next_cursor":"..."}`. Use `?cursor=<next_cursor>` for the next page; `next_cursor` is omitted on the last page. An empty list is `[]`. Cursors retain the `(created_at, id)` order and never override ownership.
+
+Both endpoints require a Bearer JWT. Creation also requires an allowed Origin or `X-CSRF-Protection: 1`. Ownership comes only from the verified JWT; extra request fields are rejected. URLs must be absolute HTTP/HTTPS URLs up to 2048 bytes after trimming, without embedded credentials, whitespace, or fragments. Hosts use ASCII DNS names (punycode for international domains), canonical dotted-decimal IPv4, or bracketed IPv6. Ambiguous numeric hosts, empty ports and malformed percent escapes are rejected; Unicode paths are supported. Shared URL cases live in `../contracts/monitor-urls.json` and run in Go and frontend tests. Intervals are whole numbers from 1 to 2,147,483,647 seconds; the frontend converts user-entered seconds, minutes, or hours to seconds. Each monitor exposes `id`, `url`, `interval_seconds`, and `created_at`.
+
+Migration `00004_monitors.sql` creates the monitor table and owner/list-order index. Restart `node scripts/dev.mjs` to apply it. Only configuration is saved: there are no outbound checks, workers, or uptime results yet.
 
 ## Profile
 

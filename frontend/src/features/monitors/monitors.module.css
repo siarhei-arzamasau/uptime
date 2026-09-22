@@ -1,0 +1,47 @@
+.monitors { display: grid; gap: 24px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.intro { color: var(--muted); margin: 0; max-width: 440px; }
+.primary, .secondary { border-radius: 8px; padding: 11px 20px; font-weight: 600; white-space: nowrap; }
+.primary { border: 1px solid var(--accent); background: var(--accent); color: var(--accentText); }
+.secondary { border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.form, .list, .empty { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.form { padding: 28px; }
+.form h2, .list h2, .empty h2 { font-size: 19px; font-weight: 650; letter-spacing: -.4px; margin: 0; }
+.form h2 { margin-bottom: 24px; }
+.fields { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(200px, 1fr); gap: 24px; align-items: start; }
+.urlField { display: grid; gap: 8px; }
+.urlField label, .intervalField legend { font-size: 13px; font-weight: 600; }
+.intervalField { border: 0; padding: 0; margin: 0; min-width: 0; }
+.intervalField legend { padding: 0; margin-bottom: 8px; }
+.intervalInputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 8px; }
+.form input, .form select { width: 100%; min-width: 0; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font: inherit; }
+.form input[aria-invalid="true"] { border-color: var(--error); }
+.note { color: var(--muted); font-size: 13px; margin: 18px 0 24px; }
+.actions { display: flex; justify-content: flex-end; gap: 10px; }
+.error { color: var(--error); font-size: 13px; margin: 4px 0 0; }
+.alert { background: var(--errorBg); color: var(--error); padding: 14px; border-radius: 8px; margin: 0; }
+.alert button { margin-left: 12px; }
+.success { margin: 0; color: var(--accent); }
+.listHeading { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.listHeading h2 span { font: 12px ui-monospace, monospace; border-radius: 5px; background: var(--soft); color: var(--accent); padding: 4px 7px; margin-left: 8px; }
+.listHeading p { font-size: 12px; color: var(--muted); margin: 0; }
+.list ul { padding: 0; margin: 0; list-style: none; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 24px; }
+.row + .row { border-top: 1px solid var(--border); }
+.website { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.website > div { min-width: 0; }
+.marker { width: 12px; height: 12px; flex-shrink: 0; border: 2px solid var(--muted); border-radius: 50%; }
+.url { overflow-wrap: anywhere; font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.status { color: var(--muted); font-size: 12px; }
+.frequency { flex-shrink: 0; color: var(--muted); font: 13px ui-monospace, monospace; margin: 0; }
+.empty { text-align: center; padding: 48px 24px; }
+.emptyMark { display: block; color: var(--muted); font: 32px ui-monospace, monospace; margin-bottom: 12px; }
+.empty p { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+@media (max-width: 650px) {
+  .toolbar { align-items: flex-start; flex-direction: column; gap: 18px; }
+  .form { padding: 20px; }
+  .fields { grid-template-columns: 1fr; gap: 20px; }
+  .listHeading { align-items: flex-start; flex-direction: column; gap: 8px; padding: 20px; }
+  .row { align-items: flex-start; flex-direction: column; gap: 14px; padding: 20px; }
+  .frequency { padding-left: 26px; }
+}

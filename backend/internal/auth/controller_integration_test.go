@@ -25,6 +25,7 @@ import (
 	"gorm.io/gorm"
 	"uptime-app/backend/internal/auth"
 	"uptime-app/backend/internal/httpx"
+	"uptime-app/backend/internal/monitor"
 	"uptime-app/backend/internal/profile"
 	"uptime-app/backend/internal/store"
 	"uptime-app/backend/migrations"
@@ -87,6 +88,7 @@ func setup(t *testing.T) *fixture {
 	controller.RegisterRoutes(mux)
 	avatarDir := t.TempDir()
 	profile.NewController(s, avatarDir).RegisterRoutes(mux, controller.Authenticate)
+	monitor.NewController(s).RegisterRoutes(mux, controller.Authenticate)
 	return &fixture{s, svc, tokens, httpx.Protect(mux, "http://localhost:3000"), avatarDir, dsn}
 }
 func (f *fixture) register(t *testing.T, email string) auth.Result {

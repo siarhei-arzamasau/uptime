@@ -1,12 +1,11 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import type { Action, User } from "./types";
+import { readBody, readJSON } from "../../lib/request-body";
+import { APIError } from "../../lib/api-error";
 
 const ACCESS = "uptime_access";
 const REFRESH = "uptime_refresh";
-class APIError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); }
-}
 function user(value: unknown): User {
   const u = value as Partial<User> | undefined;
   if (!u || typeof u.id !== "string" || typeof u.email !== "string" || typeof u.name !== "string" || typeof u.avatar_url !== "string" || typeof u.created_at !== "string") {
@@ -42,20 +41,38 @@ function setTokens(res: NextResponse, pair: ReturnType<typeof tokens>, secure: b
   // Preserve the backend's absolute expiry, not another 30 days from now.
   res.cookies.set(REFRESH, pair.refresh, { ...common, path: "/api/auth", expires: pair.expires });
 }
-export async function handleAuth(req: NextRequest, action: Action) {
+export type AuthenticatedOperation = {
+  path: string;
+  method: "GET" | "POST";
+  body?: string;
+  decode: (data: unknown) => unknown;
+  status?: number;
+  onError?: (status: number) => APIError | undefined;
+};
+
+// Feature handlers supply their operation; token rotation and Go access stay here.
+export function handleAuthenticated(req: NextRequest, prepare: () => Promise<AuthenticatedOperation>) {
+  return handleRequest(req, undefined, prepare);
+}
+
+export function handleAuth(req: NextRequest, action: Action) {
+  return handleRequest(req, action);
+}
+
+async function handleRequest(req: NextRequest, action?: Action, prepare?: () => Promise<AuthenticatedOperation>) {
   const origin = process.env.APP_ORIGIN ?? "http://localhost:3000";
   const secure = process.env.NODE_ENV === "production";
   if (req.headers.get("origin") !== origin || req.headers.get("x-csrf-protection") !== "1") {
     return response({ error: { code: "forbidden", message: "This request is not allowed." } }, 403);
   }
   const backend = process.env.BACKEND_URL ?? "http://127.0.0.1:8080";
-  async function call(path: string, init: RequestInit = {}) {
+  async function call(path: string, init: RequestInit = {}, onError?: AuthenticatedOperation["onError"]) {
     let result: Response;
     try {
       const headers = new Headers(init.headers);
       headers.set("X-CSRF-Protection", "1");
       if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-      result = await fetch(`${backend}/api/v1/${path.startsWith("profile") ? path : `auth/${path}`}`, {
+      result = await fetch(`${backend}/api/v1/${path}`, {
         ...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
         headers,
       });
@@ -63,11 +80,13 @@ export async function handleAuth(req: NextRequest, action: Action) {
       throw new APIError(503, "unavailable", "We couldn’t reach the service. Please try again.");
     }
     if (!result.ok) {
+      const domainError = onError?.(result.status);
+      if (domainError) throw domainError;
       if (result.status === 401) throw new APIError(401, "unauthorized", action === "login" ? "Incorrect email or password." : "Your session has ended. Please sign in again.");
-      if (result.status === 409) throw new APIError(409, "email_exists", "An account with this email already exists. Sign in instead.");
-      if (result.status === 413) throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
+      if (result.status === 409 && (action === "login" || action === "register")) throw new APIError(409, "email_exists", "An account with this email already exists. Sign in instead.");
+      if (result.status === 413 && action === "avatar") throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
       if (result.status === 400 && action === "avatar") throw new APIError(400, "invalid_avatar", "Choose a valid JPEG or PNG up to 2048 × 2048 pixels.");
-      if (result.status === 400) throw new APIError(400, "invalid_request", action === "profile-update" ? "Name must be at most 100 characters without control characters." : "Enter a valid email and a password of 12–128 characters.");
+      if (result.status === 400 && action) throw new APIError(400, "invalid_request", action === "profile-update" ? "Name must be at most 100 characters without control characters." : "Enter a valid email and a password of 12–128 characters.");
       throw new APIError(503, "unavailable", "The service is temporarily unavailable. Please try again.");
     }
     return result;
@@ -78,12 +97,9 @@ export async function handleAuth(req: NextRequest, action: Action) {
   try {
     if (action === "login" || action === "register") {
       if (!req.headers.get("content-type")?.startsWith("application/json")) throw new APIError(400, "invalid_request", "Expected a JSON request.");
-      const raw = await req.text();
-      if (raw.length > 4096) throw new APIError(400, "invalid_request", "Request is too large.");
-      let body: { email?: unknown; password?: unknown };
-      try { body = JSON.parse(raw); } catch { throw new APIError(400, "invalid_request", "Invalid request."); }
-      if (!body || typeof body.email !== "string" || typeof body.password !== "string") throw new APIError(400, "invalid_request", "Email and password are required.");
-      const upstream = await call(action, { method: "POST", body: JSON.stringify({ email: body.email, password: body.password }) });
+      const body = await readJSON(req, 4096);
+      if (!body || typeof body !== "object" || !("email" in body) || !("password" in body) || typeof body.email !== "string" || typeof body.password !== "string") throw new APIError(400, "invalid_request", "Email and password are required.");
+      const upstream = await call(`auth/${action}`, { method: "POST", body: JSON.stringify({ email: body.email, password: body.password }) });
       const data = await upstream.json();
       const pair = tokens(data, upstream);
       const res = response({ user: user(data.user) }, action === "register" ? 201 : 200);
@@ -91,42 +107,46 @@ export async function handleAuth(req: NextRequest, action: Action) {
       return res;
     }
     if (action === "logout") {
-      await call("logout", { method: "POST", headers: refreshHeaders });
+      await call("auth/logout", { method: "POST", headers: refreshHeaders });
       const res = response({ ok: true }); clear(res, secure); return res;
     }
     let profileBody: string | FormData | undefined;
+    const operation = await prepare?.();
     if (action === "avatar") {
       if (!req.headers.get("content-type")?.startsWith("multipart/form-data;")) throw new APIError(400, "invalid_request", "Expected an image upload.");
       profileBody = await avatarForm(req);
     }
     if (action === "profile-update") {
       if (!req.headers.get("content-type")?.startsWith("application/json")) throw new APIError(400, "invalid_request", "Expected a JSON request.");
-      const raw = await req.text();
-      if (raw.length > 4096) throw new APIError(400, "invalid_request", "Request is too large.");
-      let body: unknown;
-      try { body = JSON.parse(raw); } catch { throw new APIError(400, "invalid_request", "Invalid request."); }
+      const body = await readJSON(req, 4096);
       if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 1 || !("name" in body) || typeof body.name !== "string") throw new APIError(400, "invalid_request", "Provide only the name field as a string.");
       const name = body.name.trim();
       if ([...name].length > 100 || /\p{Cc}/u.test(name)) throw new APIError(400, "invalid_name", "Name must be at most 100 characters without control characters.");
       profileBody = JSON.stringify({ name });
     }
-    const protectedRequest = (token: string) => call(action === "session" ? "me" : action === "avatar" ? "profile/avatar" : "profile", {
-      method: action === "profile-update" ? "PATCH" : action === "avatar" ? "POST" : "GET",
-      headers: { Authorization: `Bearer ${token}` }, body: profileBody,
-    });
+    const protectedRequest = (token: string) => call(operation?.path ?? (action === "session" ? "auth/me" : action === "avatar" ? "profile/avatar" : "profile"), {
+      method: operation?.method ?? (action === "profile-update" ? "PATCH" : action === "avatar" ? "POST" : "GET"),
+      headers: { Authorization: `Bearer ${token}` }, body: operation?.body ?? profileBody,
+    }, operation?.onError);
+    async function protectedResponse(upstream: Response) {
+      let data: unknown;
+      try { data = await upstream.json(); }
+      catch { throw new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again."); }
+      return operation ? response(operation.decode(data), operation.status) : response({ user: user(data) });
+    }
     if (access) {
       try {
         const me = await protectedRequest(access);
-        return response({ user: user(await me.json()) });
+        return await protectedResponse(me);
       } catch (error) { if (!(error instanceof APIError) || error.status !== 401) throw error; }
     }
     if (!refresh) throw new APIError(401, "unauthorized", "Please sign in to continue.");
-    const upstream = await call("refresh", { method: "POST", headers: refreshHeaders });
+    const upstream = await call("auth/refresh", { method: "POST", headers: refreshHeaders });
     const pair = tokens(await upstream.json(), upstream);
-    // Persist a successful rotation even if the following /me request fails transiently.
+    // Persist a successful rotation even if the protected operation fails.
     try {
       const me = await protectedRequest(pair.access);
-      const res = response({ user: user(await me.json()) }); setTokens(res, pair, secure); return res;
+      const res = await protectedResponse(me); setTokens(res, pair, secure); return res;
     } catch (error) {
       if (error instanceof APIError && error.status !== 401) {
         const res = response({ error: { code: error.code, message: error.message } }, error.status);
@@ -137,7 +157,7 @@ export async function handleAuth(req: NextRequest, action: Action) {
   } catch (error) {
     const e = error instanceof APIError ? error : new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again.");
     const res = response({ error: { code: e.code, message: e.message } }, e.status);
-    if (["session", "profile", "profile-update", "avatar"].includes(action) && e.status === 401) clear(res, secure);
+    if ((prepare || (action && ["session", "profile", "profile-update", "avatar"].includes(action))) && e.status === 401) clear(res, secure);
     return res;
   }
 }
@@ -145,21 +165,7 @@ export async function handleAuth(req: NextRequest, action: Action) {
 // Enforce the upload limit while reading, including clients without Content-Length.
 async function avatarForm(req: NextRequest): Promise<FormData> {
   const limit = 5 * 1024 * 1024 + 64 * 1024;
-  if (Number(req.headers.get("content-length")) > limit) throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
-  const reader = req.body?.getReader();
-  if (!reader) throw new APIError(400, "invalid_request", "Choose an image.");
-  const chunks: Uint8Array[] = []; let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > limit) { await reader.cancel(); throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB."); }
-      chunks.push(value);
-    }
-  } finally { reader.releaseLock(); }
-  const bytes = new Uint8Array(size); let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  const bytes = await readBody(req, limit, new APIError(413, "avatar_too_large", "Choose an image under 5 MB."));
   let form: FormData;
   try { form = await new Response(bytes, { headers: { "Content-Type": req.headers.get("content-type")! } }).formData(); }
   catch { throw new APIError(400, "invalid_request", "Invalid image upload."); }

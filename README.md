@@ -1,6 +1,6 @@
 # Uptime App
 
-Two independent projects: a Go authentication API and a Next.js interface for registration, login, and the user dashboard.
+Two independent projects: a Go API and a Next.js interface for registration, login, profiles, and website monitors. Users can save website URLs with configurable check intervals; actual monitoring checks are not implemented yet.
 
 ```text
 backend/

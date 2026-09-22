@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AuthError, session, signOut, subscribeAuth } from "./client";
 import type { AuthResult, User } from "./types";
 import { UserMenu } from "./user-menu";
+import { Monitors } from "../monitors/monitors";
 import styles from "./auth.module.css";
 
 export function Workspace({ title, load = session, children }: {
@@ -59,4 +60,4 @@ export function Workspace({ title, load = session, children }: {
   </main>;
 }
 
-export function Dashboard() { return <Workspace title="Good to have you here." />; }
+export function Dashboard() { return <Workspace title="Your websites">{user => <Monitors key={user.id} />}</Workspace>; }

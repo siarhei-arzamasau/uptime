@@ -8,6 +8,7 @@ import { AuthError, session, signIn, signOut, subscribeAuth } from "./client";
 const router = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("./client", async importOriginal => ({ ...await importOriginal<typeof import("./client")>(), session: vi.fn(), signIn: vi.fn(), signOut: vi.fn(), subscribeAuth: vi.fn(() => () => {}) }));
+vi.mock("../monitors/monitors", () => ({ Monitors: () => <div>Website monitors</div> }));
 beforeEach(() => { vi.clearAllMocks(); });
 async function fill(register = false) {
   const user = userEvent.setup(); await user.type(screen.getByLabelText("Email address"), "person@example.com"); await user.type(screen.getByLabelText("Password", { exact: true }), "correct long password");
