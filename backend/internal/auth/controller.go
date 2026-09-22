@@ -186,6 +186,9 @@ func handleError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, 401, "unauthorized", "Invalid credentials or token")
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(w, 409, "email_exists", "Email already registered")
+	case errors.Is(err, ErrBusy):
+		w.Header().Set("Retry-After", "1")
+		httpx.WriteError(w, http.StatusTooManyRequests, "auth_busy", "Too many sign-in attempts. Please wait a moment and try again")
 	default:
 		slog.Error("authentication request failed")
 		httpx.WriteError(w, 500, "internal_error", "Internal server error")

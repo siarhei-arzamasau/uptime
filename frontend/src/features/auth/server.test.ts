@@ -57,6 +57,15 @@ describe("server session boundary", () => {
     const first = await handleAuth(req("uptime_refresh=refresh"), "logout"); expect(first.cookies.getAll()).toHaveLength(0);
     const second = await handleAuth(req("uptime_refresh=refresh"), "logout"); expect(second.cookies.getAll()).toHaveLength(2); expect(second.cookies.getAll().every(c => c.maxAge === 0)).toBe(true);
   });
+  it.each(["login", "register"] as const)("preserves cookies and retry guidance when %s is throttled", async action => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 429, headers: { "Retry-After": "1" } }));
+    const res = await handleAuth(req("uptime_access=existing; uptime_refresh=existing", { email: u.email, password: "correct long password" }), action);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("1");
+    expect(await res.json()).toMatchObject({ error: { code: "auth_busy", message: expect.stringContaining("wait a moment") } });
+    expect(res.cookies.getAll()).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it("rejects malformed successful backend responses", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ access_token: "secret" })); const res = await handleAuth(req("", { email: "x", password: "x" }), "login"); expect(res.status).toBe(502); expect(await res.text()).not.toContain("secret");
   });

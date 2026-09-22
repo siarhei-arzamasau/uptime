@@ -82,6 +82,7 @@ async function handleRequest(req: NextRequest, action?: Action, prepare?: () => 
     if (!result.ok) {
       const domainError = onError?.(result.status);
       if (domainError) throw domainError;
+      if (result.status === 429 && (action === "login" || action === "register")) throw new APIError(429, "auth_busy", "Too many sign-in attempts. Please wait a moment and try again.");
       if (result.status === 401) throw new APIError(401, "unauthorized", action === "login" ? "Incorrect email or password." : "Your session has ended. Please sign in again.");
       if (result.status === 409 && (action === "login" || action === "register")) throw new APIError(409, "email_exists", "An account with this email already exists. Sign in instead.");
       if (result.status === 413 && action === "avatar") throw new APIError(413, "avatar_too_large", "Choose an image under 5 MB.");
@@ -157,6 +158,7 @@ async function handleRequest(req: NextRequest, action?: Action, prepare?: () => 
   } catch (error) {
     const e = error instanceof APIError ? error : new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again.");
     const res = response({ error: { code: e.code, message: e.message } }, e.status);
+    if (e.status === 429) res.headers.set("Retry-After", "1");
     if ((prepare || (action && ["session", "profile", "profile-update", "avatar"].includes(action))) && e.status === 401) clear(res, secure);
     return res;
   }
