@@ -20,6 +20,11 @@ export function Workspace({ title, load = session, children }: {
   const paused = useRef(false);
   const mounted = useRef(false);
   const generation = useRef(0);
+  const updateUser = useCallback((updated: User) => {
+    // A committed mutation supersedes checks that started before it completed.
+    generation.current++;
+    setUser(updated);
+  }, []);
   const check = useCallback(async () => {
     const current = ++generation.current;
     try {
@@ -55,7 +60,9 @@ export function Workspace({ title, load = session, children }: {
     <div className={styles.dashboardHead}><div><p className={styles.eyebrow}>Your workspace</p><h1 className={styles.title}>{title}</h1></div></div>
     {error && <div role="alert" className={styles.alert}>{error.message} {error.retry && <button className={styles.secondary} onClick={() => void check()}>Try again</button>}</div>}
     {!user && !error && <p role="status">Loading your workspace…</p>}
-    {user && children?.(user, setUser)}
+    {/* The render prop only forwards updateUser to an event handler; it does not call it during render. */}
+    {/* eslint-disable-next-line react-hooks/refs */}
+    {user && children?.(user, updateUser)}
   </main>;
 }
 
