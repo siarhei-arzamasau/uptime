@@ -42,7 +42,9 @@ The launcher is for local HTTP development. Production requires HTTPS: cookie se
 
 Routes `/login`, `/register`, `/dashboard` use same-origin `POST /api/auth/{login,register,session,logout}`. Route Handlers call Go and store `uptime_access` and `uptime_refresh` as HttpOnly, SameSite=Lax cookies. Access lasts 15 minutes; refresh keeps Go's absolute expiry. Cookie paths are `/` and `/api/auth`. Responses contain only user data, never tokens. The browser does not store tokens in localStorage/sessionStorage. CSRF checks require the configured Origin and `X-CSRF-Protection: 1`.
 
-Session verification happens after mounting and when returning to a tab. Until verification, the dashboard contains no personal data. Missing/rejected access triggers one refresh; invalid refresh clears the session. Transient failures retain cookies and show a retry action. A successful refresh is persisted even if the following profile request fails temporarily. Losing a refresh response can require signing in again because Go rejects reuse of consumed tokens.
+Session verification happens after mounting and when returning to a tab. Until initial verification, the dashboard contains no personal data. Missing/rejected access triggers one refresh; invalid refresh clears the session. Transient failures retain cookies and show a retry action. Once a workspace has loaded, a transient revalidation failure also preserves its forms and unsaved drafts. Confirmed session expiry, logout, or an authentication change in another tab clears the previous workspace. A successful refresh is persisted even if the following profile request fails temporarily. Losing a refresh response can require signing in again because Go rejects reuse of consumed tokens.
+
+When Go rejects login or registration because its password-work capacity is exhausted, the adapter preserves `429` and `Retry-After: 1`, retains existing cookies, and displays a request to wait and retry. The browser does not retry automatically.
 
 Web Locks serialize auth requests across tabs; BroadcastChannel transmits only change events. Modern browsers with these APIs are required. The backend's replay protection remains unchanged. Logout revokes refresh before clearing browser cookies; a previously copied JWT remains valid until expiry.
 
@@ -51,6 +53,8 @@ Theme defaults to the system and explicit choice is stored in a nonsecret `uptim
 ## Profile
 
 Open **My account → Profile** to visit `/profile`. Email is read-only; name is optional and accepts up to 100 Unicode characters. Save changes persists the trimmed name in PostgreSQL, updates the toolbar, and shows confirmation. Failed saves keep the input for retry. The profile shares the dashboard session checks and header logout.
+
+Revalidation updates untouched profile fields from the latest server response. An edited name and selected avatar stay as local drafts until save or cancellation; canceling an avatar selection shows the latest saved image. After saving, the form follows server updates again.
 
 The browser uses `POST /api/auth/profile` to read and `PATCH /api/auth/profile` with `{"name":"Alice"}` to save. Reads use POST because expired access may rotate session cookies. This route stays under `/api/auth` to receive the existing refresh cookie. Both methods require Origin and the CSRF header, run under the same Web Lock as authentication, and return only public user data. Go serves `GET/PATCH /api/v1/profile`; tokens remain HttpOnly. Restart the shared launcher after pulling the backend migration.
 

@@ -18,10 +18,11 @@ export function Profile() {
 
 export function ProfileForm({ user, onSaved }: { user: User; onSaved: (user: User) => void }) {
   const router = useRouter();
-  const [name, setName] = useState(user.name);
+  const [nameDraft, setNameDraft] = useState<string>();
+  const name = nameDraft ?? user.name;
   const [selected, setSelected] = useState<{ file: File; url: string }>();
   const [avatarError, setAvatarError] = useState("");
-  const [avatarURL, setAvatarURL] = useState(user.avatar_url);
+  const avatarURL = user.avatar_url;
   const fileInput = useRef<HTMLInputElement>(null);
   useEffect(() => () => { if (selected) URL.revokeObjectURL(selected.url); }, [selected]);
   function selectAvatar(file?: File) {
@@ -48,8 +49,8 @@ export function ProfileForm({ user, onSaved }: { user: User; onSaved: (user: Use
     submitting.current = true; setBusy(true);
     try {
       const result = selected ? await uploadAvatar(value, selected.file) : await updateProfile(value);
-      setAvatarURL(result.user.avatar_url); setSelected(undefined);
-      setName(result.user.name); onSaved(result.user); setSaved(true);
+      setSelected(undefined); setNameDraft(undefined);
+      onSaved(result.user); setSaved(true);
     } catch (e) {
       if (e instanceof AuthError && e.status === 401) { router.replace("/login"); return; }
       setError(e instanceof Error ? e.message : "Unable to save your profile. Please try again.");
@@ -78,7 +79,7 @@ export function ProfileForm({ user, onSaved }: { user: User; onSaved: (user: Use
       </div>
       <div className={form.field}>
         <label htmlFor="profile-name">Name</label>
-        <input ref={input} id="profile-name" autoComplete="name" value={name} disabled={busy} onChange={event => { setName(event.target.value); setSaved(false); setFieldError(""); }} aria-invalid={!!fieldError} aria-describedby={fieldError ? "name-error" : "name-hint"} />
+        <input ref={input} id="profile-name" autoComplete="name" value={name} disabled={busy} onChange={event => { setNameDraft(event.target.value === user.name ? undefined : event.target.value); setSaved(false); setFieldError(""); }} aria-invalid={!!fieldError} aria-describedby={fieldError ? "name-error" : "name-hint"} />
         <p id="name-hint" className={form.hint}>Optional. Up to 100 characters.</p>
         {fieldError && <p id="name-error" className={form.error} role="alert">{fieldError}</p>}
       </div>
