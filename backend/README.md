@@ -1,38 +1,38 @@
 # Backend
 
-Go API для регистрации и аутентификации: PostgreSQL 17, GORM, JWT и refresh-сессии.
+Go registration and authentication API: PostgreSQL 17, GORM, JWT, and refresh sessions.
 
-## Структура
+## Structure
 
-- `internal/auth/` — сервис аутентификации, токены, HTTP-контроллер и его интеграционные тесты.
-- `internal/httpx/` — общие middleware CORS/CSRF и функции JSON-ответов, без контроллеров предметной области.
-- `internal/store/` — модели и репозитории GORM; `internal/config/` — конфигурация.
-- `cmd/api/` — сборка приложения и регистрация маршрутов модулей на общем mux.
+- `internal/auth/`: authentication service, tokens, HTTP controller, and its integration tests.
+- `internal/httpx/`: shared CORS/CSRF middleware and JSON response helpers, without domain controllers.
+- `internal/store/`: GORM models and repositories; `internal/config/`: configuration.
+- `cmd/api/`: application wiring and module route registration on the shared mux.
 
-Контроллеры новых модулей размещаются внутри соответствующих модулей и предоставляют `RegisterRoutes`.
+Place new controllers inside their owning modules and expose `RegisterRoutes`.
 
-## Требования и запуск
+## Requirements and startup
 
-Нужны Go 1.26+, Docker с Compose, `curl` и Python 3 для примеров ниже. На macOS запустите Docker Desktop (`open -a Docker`) и дождитесь успешного `docker info`.
+Requires Go 1.26+, Docker with Compose, `curl`, and Python 3 for the examples below. On macOS, start Docker Desktop (`open -a Docker`) and wait for `docker info` to succeed.
 
-Все команды выполняются из `backend/`. Если Go установлен во временную папку текущей разработки, добавьте его в PATH:
+Run all commands from `backend/`. If Go is installed in the temporary development directory, add it to PATH:
 
 ```sh
 export PATH="/private/tmp/uptime-toolchain/go/bin:$PATH"
 ```
 
-Для постоянной разработки установите Go обычным способом: временная папка может быть очищена системой.
+For ongoing development, install Go normally: the system may clear the temporary directory.
 
-Создайте локальную конфигурацию (не перезаписывайте уже существующий `.env`):
+Create local configuration (do not overwrite an existing `.env`):
 
 ```sh
 cp -n .env.example .env
-# Сгенерируйте два разных значения для POSTGRES_PASSWORD и JWT_SECRET:
+# Generate two different values for POSTGRES_PASSWORD and JWT_SECRET:
 openssl rand -hex 32
 openssl rand -hex 32
 ```
 
-Заполните `.env`: пароль должен совпадать в `POSTGRES_PASSWORD` и `DATABASE_URL`. Для пароля используйте hex-строку, чтобы не требовалось URL-кодирование. Если порт 5432 занят, измените и `POSTGRES_PORT`, и порт в `DATABASE_URL`; в текущем локальном окружении используется **5433**.
+Complete `.env`: the password must match in `POSTGRES_PASSWORD` and `DATABASE_URL`. Use a hex string to avoid URL encoding. If port 5432 is occupied, change both `POSTGRES_PORT` and the port in `DATABASE_URL`; the current local environment uses **5433**.
 
 ```sh
 set -a
@@ -47,46 +47,46 @@ go run ./cmd/migrate status
 go run ./cmd/api
 ```
 
-API слушает `127.0.0.1:8080`. Приложение и команда миграций читают окружение процесса; `.env` автоматически читает только Compose, поэтому перед Go-командами нужен экспорт выше. Изменение пароля в `.env` не меняет пароль уже созданной БД в volume.
+The API listens on `127.0.0.1:8080`. The application and migration command read the process environment; only Compose reads `.env` automatically, so export it as shown above before running Go commands. Changing the password in `.env` does not change the password of a database already initialized in the volume.
 
-## Конфигурация
+## Configuration
 
-| Переменная | Назначение |
+| Variable | Purpose |
 |---|---|
-| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Начальная конфигурация контейнера |
-| `POSTGRES_PORT` | Локальный порт PostgreSQL; по умолчанию 5432 |
-| `DATABASE_URL` | URL подключения API и миграций |
-| `HTTP_ADDR` | Адрес сервера; по умолчанию `127.0.0.1:8080` |
-| `JWT_SECRET` | Обязательный случайный секрет минимум 32 байта, не значение из шаблона |
-| `JWT_ISSUER`, `JWT_AUDIENCE` | По умолчанию `uptime-api`, `uptime-web` |
-| `ALLOWED_ORIGIN` | Origin фронтенда без завершающего `/`; по умолчанию `http://localhost:3000` |
-| `COOKIE_SECURE` | По умолчанию `true`; `.env.example` задаёт `false` для локального HTTP |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Initial container configuration |
+| `POSTGRES_PORT` | Local PostgreSQL port; default 5432 |
+| `DATABASE_URL` | Connection URL for the API and migrations |
+| `HTTP_ADDR` | Server address; default `127.0.0.1:8080` |
+| `JWT_SECRET` | Required random secret of at least 32 bytes, not a placeholder |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | Defaults: `uptime-api`, `uptime-web` |
+| `ALLOWED_ORIGIN` | Frontend origin without a trailing `/`; default `http://localhost:3000` |
+| `COOKIE_SECURE` | Defaults to `true`; `.env.example` uses `false` for local HTTP |
 
-Для production требуется HTTPS и `COOKIE_SECURE=true`; `sslmode=disable` в примере относится к локальной БД. Секреты, `.env` и содержимое cookie jar не коммитить.
+Production requires HTTPS and `COOKIE_SECURE=true`; `sslmode=disable` in the example is for the local database. Never commit secrets, `.env`, or cookie jar contents.
 
-## Профиль
+## Profile
 
-- `GET /api/v1/profile`: получить собственный профиль по Bearer JWT.
-- `PATCH /api/v1/profile`: изменить имя, JSON `{"name":"Сергей"}`. Ответ — обновлённый профиль.
+- `GET /api/v1/profile`: retrieve your own profile using a Bearer JWT.
+- `PATCH /api/v1/profile`: update the name with JSON `{"name":"Sergey"}`. Returns the updated profile.
 
-Имя необязательно, максимум 100 Unicode-символов после обрезки пробелов по краям; управляющие символы запрещены. Пустая строка удаляет имя. Другие поля, включая `email` и `id`, отклоняются с `400`. Пользователь определяется только из проверенного JWT. Для изменения требуется разрешённый Origin или `X-CSRF-Protection: 1`.
+Name is optional, with a maximum of 100 Unicode characters after trimming surrounding whitespace; control characters are forbidden. An empty string clears the name. Other fields, including `email` and `id`, are rejected with `400`. The user is identified only by the verified JWT. Updates require an allowed Origin or `X-CSRF-Protection: 1`.
 
-Миграция `00002_user_name.sql` добавляет поле `name` с пустой строкой для существующих пользователей. Перезапустите `node scripts/dev.mjs` из корня: скрипт применит миграции и пересоберёт API.
+Migration `00002_user_name.sql` adds the `name` field with an empty string for existing users. Restart `node scripts/dev.mjs` from the root to apply migrations and rebuild the API.
 
-## API и пример сценария
+## API and example workflow
 
-Маршруты: `POST /api/v1/auth/register`, `/login`, `/refresh`, `/logout` и `GET /api/v1/auth/me`.
+Routes: `POST /api/v1/auth/register`, `/login`, `/refresh`, `/logout`, and `GET /api/v1/auth/me`.
 
-Регистрация и вход принимают JSON с `email` и `password`. Email нормализуется; пароль содержит 12–128 символов. Успешный ответ содержит `user`, `access_token`, `token_type`, `expires_in`. Refresh возвращает только поля токена. Пользователь содержит `id`, `email`, `name`, `created_at`. Refresh-токен доступен только в HttpOnly cookie.
+Registration and login accept JSON with `email` and `password`. Email is normalized; passwords contain 12–128 characters. Successful responses include `user`, `access_token`, `token_type`, and `expires_in`. Refresh returns only token fields. User data includes `id`, `email`, `name`, and `created_at`. The refresh token is available only through an HttpOnly cookie.
 
-В другом терминале:
+In another terminal:
 
 ```sh
 API=http://localhost:8080/api/v1/auth
 COOKIE_JAR=$(mktemp)
 chmod 600 "$COOKIE_JAR"
 
-# Используйте новый email для каждого повторения регистрации.
+# Use a new email for each registration attempt.
 AUTH=$(curl --fail-with-body -sS -c "$COOKIE_JAR" \
   -H 'Content-Type: application/json' -H 'X-CSRF-Protection: 1' \
   -d '{"email":"demo@example.com","password":"correct horse battery staple"}' \
@@ -101,7 +101,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $TOKEN" "$API/me"
 curl --fail-with-body -sS -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
   -X POST -H 'X-CSRF-Protection: 1' "$API/logout"
 
-# Повторный вход создаёт новую независимую сессию.
+# Logging in again creates a new independent session.
 AUTH=$(curl --fail-with-body -sS -c "$COOKIE_JAR" \
   -H 'Content-Type: application/json' -H 'X-CSRF-Protection: 1' \
   -d '{"email":"demo@example.com","password":"correct horse battery staple"}' \
@@ -112,15 +112,15 @@ rm "$COOKIE_JAR"
 unset AUTH TOKEN
 ```
 
-Из браузера используйте `credentials: "include"` для работы с refresh-cookie и Bearer JWT для `/me`. CORS разрешает только `ALLOWED_ORIGIN`; изменяющий запрос с чужим Origin отклоняется. Клиенты без Origin должны отправлять `X-CSRF-Protection: 1`.
+From a browser, use `credentials: "include"` for the refresh cookie and a Bearer JWT for `/me`. CORS allows only `ALLOWED_ORIGIN`; mutating requests from a foreign Origin are rejected. Clients without Origin must send `X-CSRF-Protection: 1`.
 
-JWT действует 15 минут. Refresh-сессия действует 30 дней от входа без продления. Каждый refresh заменяет токен; обновления на клиенте должны быть последовательными, в том числе между вкладками с общей cookie. Повторное использование старого токена отзывает эту сессию, включая при конкурентном refresh. Другие устройства продолжают работать. После потери ответа refresh может понадобиться повторный вход.
+JWTs last 15 minutes. Refresh sessions last 30 days from login without extension. Every refresh replaces the token; clients must refresh sequentially, including across tabs sharing a cookie. Reusing an old token revokes that session, including during concurrent refresh. Other devices remain unaffected. Losing a refresh response may require logging in again.
 
-Logout идемпотентен и отзывает текущую refresh-сессию. Уже выданный JWT действует до истечения 15 минут. Восстановление пароля и подтверждение email пока отсутствуют.
+Logout is idempotent and revokes the current refresh session. Previously issued JWTs remain valid until their 15-minute expiry. Password recovery and email verification are not implemented yet.
 
-Ошибки имеют вид `{"error":{"code":"…","message":"…"}}`: 400 — валидация, 401 — аутентификация, 403 — Origin/CSRF, 409 — занятый email, 500 — внутренняя ошибка без деталей БД.
+Errors use `{"error":{"code":"…","message":"…"}}`: 400 for validation, 401 for authentication, 403 for Origin/CSRF, 409 for an existing email, and 500 for internal failures without database details.
 
-## Проверки и миграции
+## Validation and migrations
 
 ```sh
 gofmt -w .
@@ -128,34 +128,34 @@ go vet ./...
 go test ./...
 go build -o bin/api ./cmd/api
 
-# Создать один раз отдельную БД для интеграционных тестов:
+# Create a separate integration test database once:
 docker compose exec -T postgres createdb -U "$POSTGRES_USER" uptime_test
 export TEST_DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT:-5432}/uptime_test?sslmode=disable"
 go test -count=1 -v ./...
 go test -race ./...
 ```
 
-Без `TEST_DATABASE_URL` PostgreSQL-тесты явно пропускаются. Имя тестовой БД должно оканчиваться на `_test`; каждый тест создаёт отдельную схему, применяет миграции и удаляет только свою схему после завершения. Не указывайте рабочую БД. Проверяются HTTP-сценарии, конкуренция, отзыв, откат транзакций при ошибках записи и миграции up/down/up.
+Without `TEST_DATABASE_URL`, PostgreSQL tests are explicitly skipped. The database name must end in `_test`; each test creates its own schema, applies migrations, and removes only that schema afterward. Never use the working database. Coverage includes HTTP flows, concurrency, revocation, transaction rollback on write failures, and up/down/up migrations.
 
-Миграции находятся в `migrations/`, встроены в команду через `go:embed` и применяются явно; `AutoMigrate` отсутствует. `go run ./cmd/migrate down` откатывает последнюю миграцию и может удалять данные — используйте только осознанно, проверку отката выполняйте на тестовой БД.
+Migrations live in `migrations/`, are embedded with `go:embed`, and run explicitly; `AutoMigrate` is not used. `go run ./cmd/migrate down` rolls back the latest migration and may delete data. Use it deliberately and test rollback against a test database.
 
-## Управление PostgreSQL
+## Managing PostgreSQL
 
 ```sh
 docker compose ps
 docker compose logs --tail=50 postgres
-docker compose down              # Остановить, сохранив данные
-docker compose up -d --wait      # Запустить снова
+docker compose down              # Stop while preserving data
+docker compose up -d --wait      # Start again
 ```
 
-**Удаление всей локальной БД:** `docker compose down -v` удаляет volume и все его данные. Это не обычная команда остановки.
+**Deleting the entire local database:** `docker compose down -v` removes the volume and all its data. This is not the normal shutdown command.
 
-## Аватары
+## Avatars
 
-`POST /api/v1/profile/avatar` принимает Bearer JWT и `multipart/form-data`: одно поле `name` и один файл `avatar`. Имя и аватар сохраняются вместе. Поддерживаются JPEG/PNG до 5 МБ и 2048 × 2048 пикселей. Backend проверяет декодирование и пересохраняет изображение без исходных метаданных; SVG и другие форматы отклоняются. Ошибки формата возвращают `400`, размера — `413`, отсутствующей авторизации — `401`.
+`POST /api/v1/profile/avatar` accepts a Bearer JWT and `multipart/form-data`: one `name` field and one `avatar` file. Name and avatar are saved together. JPEG/PNG up to 5 MB and 2048 × 2048 pixels are supported. The backend validates decoding and re-encodes the image without original metadata; SVG and other formats are rejected. Invalid formats return `400`, oversized files return `413`, and missing authorization returns `401`.
 
-`avatar_url` входит в ответы профиля, `/auth/me`, регистрации и входа; пустая строка означает отсутствие изображения. `GET /api/v1/avatars/{uuid}.png` (или `.jpg`) раздаёт изображение по публичному непрогнозируемому URL, без списка файлов. Не используйте аватары для приватных документов.
+`avatar_url` is included in profile, `/auth/me`, registration, and login responses; an empty string means no image. `GET /api/v1/avatars/{uuid}.png` (or `.jpg`) serves the image through a public, unguessable URL without directory listing. Do not use avatars for private documents.
 
-Файлы хранятся в `AVATAR_DIR` (по умолчанию `backend/var/avatars`, если API запускается из `backend/`). Папка `backend/var/` исключена из Git. При замене предыдущий файл удаляется после успешного обновления БД; ошибка обновления удаляет новый файл. Для переноса/резервного копирования сохраняйте и PostgreSQL, и эту папку; процесс API должен иметь право записи в неё. Если путь переопределён, исключите его из Git самостоятельно.
+Files are stored in `AVATAR_DIR` (by default `backend/var/avatars` when running the API from `backend/`). The `backend/var/` directory is excluded from Git. Replacement deletes the previous file after a successful database update; a failed update removes the new file. Back up or migrate both PostgreSQL and this directory; the API process needs write access. If you override the path, exclude it from Git yourself.
 
-Миграция `00003_user_avatar.sql` добавляет ссылку на файл, не меняя существующие профили. Общий launcher применяет её при запуске. E2E использует отдельную папку `backend/var/e2e-avatars`, а интеграционные Go-тесты — временные директории.
+Migration `00003_user_avatar.sql` adds the file reference without changing existing profiles. The shared launcher applies it on startup. E2E uses the separate `backend/var/e2e-avatars` directory; Go integration tests use temporary directories.

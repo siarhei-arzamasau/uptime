@@ -1,16 +1,16 @@
-## [С] Контекcт
+## [C] Context
 
-Где смотреть и для чего задача
+Where to look and why this task is needed.
 
-## [0] Результат / Цель - что должно быть
+## [O] Outcome / Goal
 
-[Пользователь может ..., после чего ...]
+[The user can ..., after which ...]
 
-## [S] Границы
+## [S] Scope
 
-Что не нужно затрагивать при реализации задачи
+What should remain outside the scope of this task.
 
-## [Т] Проверка - когда готово
+## [T] Testing / Acceptance criteria
 
-- Тесты прошли
+- Tests pass.
   ...

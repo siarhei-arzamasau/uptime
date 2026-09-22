@@ -1,28 +1,28 @@
-## [С] Контекcт
+## [C] Context
 
-Мы хотим, чтобы пользователь мог загрузить свой аватар в профиле, и он бы у него отобразился.
+Users should be able to upload an avatar from their profile and see it displayed.
 
-## [0] Результат / Цель - что должно быть
+## [O] Outcome / Goal
 
-Пользователь заходит в редактирование профиля, нажимает «Загрузить аватар», выбирает изображение подходящего формата, JPEG, PNG, возможно, еще какие-то. После этого нажимает «Выбрать». У него появляется новый аватар и кнопка «Единая сохранитьồ которую этот аватар обновит. При нажатии «Сохранить» в профиле пользователя теперь отображается новый аватар и в панели верхней тоже отображается обновленный аватар.
+The user opens the profile editor, clicks **Upload avatar**, chooses an image in a supported format such as JPEG or PNG, and confirms the selection. A preview appears. Clicking the shared **Save changes** button saves the new avatar and updates it in both the profile and the top toolbar.
 
-## [S] Границы
+## [S] Scope
 
-Мы будем хранить аватары локально в папке, в отдельной, которую нужно исключить из git, и из этой же папки мы должны их раздавать на фронт-энд.
+Store avatars locally in a dedicated directory excluded from Git, and serve the images to the frontend from that directory.
 
-## [Т] Проверка - когда готово
+## [T] Testing / Acceptance criteria
 
-Тест загрузки аватара и новый АРІ для загрузки изображения работает.
+The avatar upload test passes and the new image upload API works.
 
-## Выполнено
+## Completed
 
-- [x] Выбор JPEG/PNG и локальный предпросмотр с отменой.
-- [x] Единая кнопка Save changes сохраняет имя и аватар.
-- [x] API загрузки с авторизацией, проверкой формата, размера и размеров изображения.
-- [x] Локальное хранение в backend/var/avatars, исключённом из Git, и API раздачи изображений.
-- [x] Миграция профиля и обновление аватара в toolbar после сохранения.
-- [x] Замена старого файла и очистка нового при ошибке сохранения в БД.
-- [x] Unit-тесты, интеграционные Go/PostgreSQL-тесты и Playwright desktop/mobile.
-- [x] Документация API и локального хранения.
+- [x] JPEG/PNG selection and local preview with cancellation.
+- [x] A shared Save changes button saves the name and avatar.
+- [x] Authenticated upload API with format, file size, and image dimension validation.
+- [x] Local storage in backend/var/avatars, excluded from Git, and an image-serving API.
+- [x] Profile migration and toolbar avatar update after saving.
+- [x] Replacement of the old file and cleanup of the new file if the database save fails.
+- [x] Unit tests, Go/PostgreSQL integration tests, and Playwright desktop/mobile coverage.
+- [x] API and local storage documentation.
 
-Проверки: 70 Vitest-тестов, 18 Playwright E2E; Go-тесты с PostgreSQL, go vet, ESLint и production-сборки прошли. Для применения миграции локально перезапустить `node scripts/dev.mjs`.
+Validation: 70 Vitest tests and 18 Playwright E2E tests passed, along with Go tests against PostgreSQL, go vet, ESLint, and production builds. Restart `node scripts/dev.mjs` to apply the migration locally.

@@ -1,173 +1,173 @@
-# Аутентификация на Go с PostgreSQL, GORM и JWT
+# Go authentication with PostgreSQL, GORM, and JWT
 
-## Выбор ORM и архитектура
+## ORM selection and architecture
 
-Использовать **GORM** с `gorm.io/driver/postgres`. Для наших моделей пользователей и сессий это подходящий вариант: PostgreSQL-драйвер использует pgx, поддерживаются транзакции и блокировки `FOR UPDATE`, необходимые для безопасной ротации токенов. [Драйвер PostgreSQL](https://gorm.io/docs/connecting_to_the_database.html), [транзакции](https://gorm.io/docs/transactions.html), [блокировки](https://gorm.io/docs/advanced_query.html).
+Use **GORM** with `gorm.io/driver/postgres`. It fits our user and session models: the PostgreSQL driver uses pgx and supports transactions and `FOR UPDATE` locks needed for safe token rotation. [PostgreSQL driver](https://gorm.io/docs/connecting_to_the_database.html), [transactions](https://gorm.io/docs/transactions.html), [locking](https://gorm.io/docs/advanced_query.html).
 
-- HTTP-сервер — стандартный `net/http`; JWT — `golang-jwt/jwt/v5`.
-- Размещать HTTP-контроллеры внутри своих модулей: контроллер аутентификации — в `internal/auth/`. Общие HTTP-middleware и JSON-ответы — в `internal/httpx/`, регистрация маршрутов модулей — в `cmd/api/`.
-- GORM использовать внутри репозиториев; модели БД не возвращать напрямую через HTTP.
-- Использовать один пул `database/sql`, управляемый через GORM; отдельный `pgxpool` не создавать.
-- Схему изменять версионируемыми SQL-миграциями через `goose`, с отдельной Go-командой запуска. `AutoMigrate` при старте приложения не использовать.
-- Зафиксировать зависимости в `go.mod` и `go.sum`.
+- HTTP server: standard `net/http`; JWT: `golang-jwt/jwt/v5`.
+- Keep HTTP controllers in their owning modules: authentication in `internal/auth/`. Shared HTTP middleware and JSON responses belong in `internal/httpx/`; compose module routes in `cmd/api/`.
+- Use GORM inside repositories; never return database models directly over HTTP.
+- Use one `database/sql` pool managed through GORM; do not create a separate `pgxpool`.
+- Change the schema through versioned SQL migrations with `goose`, using a separate Go command. Do not run `AutoMigrate` on application startup.
+- Pin dependencies in `go.mod` and `go.sum`.
 
-## PostgreSQL и Docker
+## PostgreSQL and Docker
 
-- Проверить Docker и Compose; запустить установленный Docker Desktop и дождаться готовности. Если Docker отсутствует — сообщить о необходимой установке.
-- Добавить `backend/docker-compose.yml`: PostgreSQL 17, именованный volume, healthcheck через `pg_isready`, порт `127.0.0.1:5432`.
-- Параметры БД читать из локального `.env`; добавить `.env.example` без реальных секретов.
-- Запустить `docker compose up -d --wait`, проверить соединение и применить миграции.
-- Документировать запуск, логи и `docker compose down`, сохраняющий данные. Удаление volume описать отдельно как удаление локальной БД.
-- Go-приложение пока запускать локально, вне контейнера.
+- Check Docker and Compose; start the installed Docker Desktop and wait for readiness. If Docker is missing, report the installation requirement.
+- Add `backend/docker-compose.yml`: PostgreSQL 17, a named volume, a `pg_isready` healthcheck, and port `127.0.0.1:5432`.
+- Read database settings from local `.env`; add `.env.example` without real secrets.
+- Run `docker compose up -d --wait`, check connectivity, and apply migrations.
+- Document startup, logs, and `docker compose down`, which preserves data. Document volume deletion separately as removal of the local database.
+- Run the Go application locally, outside a container for now.
 
-Миграции создают:
+Migrations create:
 
-- `users`: UUID, уникальный нормализованный email, хеш пароля, дата создания.
-- `sessions`: UUID, пользователь, срок действия, дата отзыва.
-- `refresh_tokens`: уникальный хеш токена, сессия, даты создания и использования.
-- Внешние ключи и индексы для email, поиска токена по хешу и токенов по сессии.
+- `users`: UUID, unique normalized email, password hash, and creation timestamp.
+- `sessions`: UUID, user, expiry, and revocation timestamp.
+- `refresh_tokens`: unique token hash, session, creation and use timestamps.
+- Foreign keys and indexes for email, token lookup by hash, and tokens by session.
 
-GORM-модели описать с явными UUID и временными полями, без встраивания `gorm.Model` и неявного soft delete.
+Define GORM models with explicit UUID and timestamp fields, without embedding `gorm.Model` or implicit soft deletion.
 
-## Регистрация и HTTP API
+## Registration and HTTP API
 
-Регистрация — по email и паролю, без подтверждения email, с немедленной выдачей токенов. Каждый вход создаёт независимую сессию устройства.
+Register with email and password, without email verification, issuing tokens immediately. Every login creates an independent device session.
 
-Все маршруты расположить под `/api/v1/auth`:
+Place all routes under `/api/v1/auth`:
 
-| Метод и маршрут | Поведение |
+| Method and route | Behavior |
 |---|---|
-| `POST /register` | Принимает `email`, `password`; создаёт пользователя и сессию, возвращает `201` |
-| `POST /login` | Принимает `email`, `password`; создаёт сессию, возвращает `200` |
-| `POST /refresh` | Читает refresh-cookie, заменяет refresh-токен, возвращает новый JWT |
-| `POST /logout` | Отзывает текущую refresh-сессию и очищает cookie; идемпотентный `204` |
-| `GET /me` | Проверяет Bearer JWT, возвращает `id`, `email`, `created_at` |
+| `POST /register` | Accepts `email`, `password`; creates a user and session; returns `201` |
+| `POST /login` | Accepts `email`, `password`; creates a session; returns `200` |
+| `POST /refresh` | Reads the refresh cookie, rotates the refresh token, and returns a new JWT |
+| `POST /logout` | Revokes the current refresh session and clears the cookie; idempotent `204` |
+| `GET /me` | Verifies the Bearer JWT and returns `id`, `email`, `created_at` |
 
-Регистрация и вход возвращают `user`, `access_token`, `token_type: "Bearer"` и `expires_in`. Refresh возвращает поля токена без `user`. Refresh-токен передаётся только через cookie.
+Registration and login return `user`, `access_token`, `token_type: "Bearer"`, and `expires_in`. Refresh returns token fields without `user`. The refresh token is transmitted only through a cookie.
 
-Ошибки имеют формат `{"error":{"code":"…","message":"…"}}`: `400` — некорректные данные, `401` — неверные учётные данные или токены, `409` — занятый email, `500` — внутренняя ошибка. Вход не раскрывает существование пользователя; ошибки не раскрывают детали БД.
+Errors use `{"error":{"code":"…","message":"…"}}`: `400` for invalid input, `401` for invalid credentials or tokens, `409` for an existing email, and `500` for internal failures. Login must not reveal whether a user exists; errors must not expose database details.
 
-## Пароли и жизненный цикл токенов
+## Passwords and token lifecycle
 
-- Email обрезать по краям, привести к нижнему регистру и проверить формат. Пароли не преобразовывать; длина — 12–128 символов.
-- Хешировать пароли Argon2id с индивидуальной случайной солью: память 64 MiB, 3 прохода, параллелизм 1. Параметры сохранять вместе с хешем.
-- Access-токен — **JWT**, HS256, срок 15 минут. Проверять подпись, алгоритм и обязательные `sub`, `iss`, `aud`, `iat`, `exp`.
-- Refresh-токен — 32 случайных байта в base64url; хранить только SHA-256 хеш.
-- Сессия действует 30 дней от входа без продления. При каждом refresh выдаётся новая пара токенов.
-- Создание пользователя и первой сессии выполнять в одной GORM-транзакции.
-- Ротацию выполнять в транзакции с блокировкой строки сессии через `clause.Locking{Strength: "UPDATE"}`; после блокировки повторно проверять состояние токена.
-- Использованные хеши сохранять до истечения сессии. Повторное использование отзывает всю соответствующую сессию, не затрагивая другие устройства.
-- Отзыв при повторном использовании должен фиксироваться в БД **до** возврата `401`; ошибка авторизации не должна откатывать транзакцию отзыва.
-- Параллельный refresh одним токеном считается повторным использованием; клиент должен обновлять токены последовательно.
-- Logout отзывает refresh-сессию; уже выданный JWT действует до своего истечения.
+- Trim email, lowercase it, and validate its format. Do not transform passwords; require 12–128 characters.
+- Hash passwords with Argon2id and an individual random salt: 64 MiB memory, 3 iterations, parallelism 1. Store parameters alongside the hash.
+- Access token: **JWT**, HS256, 15-minute expiry. Verify the signature, algorithm, and required `sub`, `iss`, `aud`, `iat`, `exp` claims.
+- Refresh token: 32 random bytes encoded as base64url; store only its SHA-256 hash.
+- Sessions last 30 days from login without extension. Issue a new token pair on every refresh.
+- Create the user and first session in one GORM transaction.
+- Rotate in a transaction, locking the session row with `clause.Locking{Strength: "UPDATE"}`; recheck token state after acquiring the lock.
+- Keep used hashes until session expiry. Reuse revokes the entire corresponding session without affecting other devices.
+- Reuse-triggered revocation must commit **before** returning `401`; authorization errors must not roll back revocation.
+- Concurrent refresh with the same token counts as reuse; clients must refresh sequentially.
+- Logout revokes the refresh session; previously issued JWTs remain valid until expiry.
 
-Cookie `refresh_token`: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/api/v1/auth`, без `Domain`. Для локального HTTP разрешить настройкой отключение `Secure`.
+Cookie `refresh_token`: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/api/v1/auth`, no `Domain`. Allow disabling `Secure` through configuration for local HTTP.
 
-Проверять `Origin` изменяющих запросов по разрешённому списку; без `Origin` требовать `X-CSRF-Protection: 1`. CORS разрешает только настроенный origin и credentials.
+Check mutating request `Origin` against the allowlist; require `X-CSRF-Protection: 1` when `Origin` is absent. CORS permits only the configured origin and credentials.
 
-Конфигурация через окружение: адрес HTTP, URL БД, JWT-секрет, issuer, audience, origin и режим cookie. JWT-секрет обязателен, минимум 32 случайных байта. Не логировать пароли, токены, cookie или SQL-параметры с чувствительными данными. Ответы с токенами — `Cache-Control: no-store`.
+Environment configuration: HTTP address, database URL, JWT secret, issuer, audience, origin, and cookie mode. The JWT secret is required and must contain at least 32 random bytes. Never log passwords, tokens, cookies, or sensitive SQL parameters. Token responses use `Cache-Control: no-store`.
 
-## Проверки и критерии готовности
+## Validation and acceptance criteria
 
-- Проверить Docker Compose, готовность PostgreSQL, миграции на пустой БД и сохранение данных после пересоздания контейнера.
-- Unit-тесты: валидация, пароли, выпуск JWT, неверные подпись, алгоритм, issuer, audience и срок.
-- Интеграционные тесты GORM проводить на настоящем PostgreSQL через отдельный `TEST_DATABASE_URL`, а не SQLite.
-- Проверить регистрацию, конкурентную регистрацию одинакового email, вход, `/me`, cookie, CORS и защиту изменяющих запросов.
-- Проверить ротацию, повторное использование, фиксацию отзыва после `401`, параллельный refresh, истечение, logout и независимость устройств.
-- Выполнить `gofmt`, `go vet ./...`, `go test ./...` и сборку.
-- В README описать запуск БД, миграций, API и сценарий регистрации → `/me` → refresh → logout через `curl`.
+- Verify Docker Compose, PostgreSQL readiness, migrations on an empty database, and persistence after container recreation.
+- Unit tests: validation, passwords, JWT issuance, invalid signatures, algorithms, issuer, audience, and expiry.
+- Run GORM integration tests against real PostgreSQL through a separate `TEST_DATABASE_URL`, not SQLite.
+- Verify registration, concurrent registration with the same email, login, `/me`, cookies, CORS, and mutating request protection.
+- Verify rotation, reuse, committed revocation after `401`, concurrent refresh, expiry, logout, and device independence.
+- Run `gofmt`, `go vet ./...`, `go test ./...`, and the build.
+- Document database, migration, and API startup in README, with a registration → `/me` → refresh → logout `curl` workflow.
 
-Восстановление пароля, подтверждение email и реализация фронтенда исключены. Размещение фронтенда и API предполагается в пределах одного сайта; локально — `localhost:3000` и `localhost:8080`.
+Password recovery, email verification, and frontend implementation are out of scope. The frontend and API are assumed to share a site; locally, `localhost:3000` and `localhost:8080`.
 
-## Задачи
+## Tasks
 
-Отмечать пункт как выполненный (`[x]`) только после реализации и соответствующей проверки. Частично выполненные или заблокированные задачи оставлять с `[ ]`, указывая причину рядом с пунктом. Обновлять этот список по ходу реализации; результаты проверок и ограничения фиксировать рядом с соответствующей задачей.
+Mark a task complete (`[x]`) only after implementation and the corresponding validation. Leave partial or blocked tasks unchecked (`[ ]`) and explain why next to the item. Update this list during implementation; record validation results and limitations alongside the relevant task.
 
-### 1. Окружение и PostgreSQL
+### 1. Environment and PostgreSQL
 
-- [x] Проверить Go 1.26+, Docker и Docker Compose; запустить Docker Desktop и дождаться готовности движка.
-- [x] Добавить `backend/docker-compose.yml` с PostgreSQL 17, именованным volume, healthcheck и привязкой порта к `127.0.0.1`.
-- [x] Добавить `.env.example` с настройками БД и приложения; подготовить игнорируемый локальный `.env` с локальными секретами.
-- [x] Проверить Compose-конфигурацию, запустить `docker compose up -d --wait` и подтвердить доступность PostgreSQL.
+- [x] Check Go 1.26+, Docker, and Docker Compose; start Docker Desktop and wait for engine readiness.
+- [x] Add `backend/docker-compose.yml` with PostgreSQL 17, a named volume, healthcheck, and port binding to `127.0.0.1`.
+- [x] Add `.env.example` with database/application settings; prepare an ignored local `.env` with local secrets.
+- [x] Validate Compose configuration, run `docker compose up -d --wait`, and confirm PostgreSQL availability.
 
-### 2. Основа приложения и конфигурация
+### 2. Application foundation and configuration
 
-- [x] Добавить GORM, PostgreSQL-драйвер, goose, JWT и Argon2id; зафиксировать зависимости в `go.mod` и `go.sum`.
-- [x] Создать пакеты HTTP, сервиса аутентификации, токенов и репозиториев внутри `internal/`.
-- [x] Реализовать загрузку и проверку конфигурации окружения, включая обязательный JWT-секрет и параметры cookie/CORS.
-- [x] Настроить подключение GORM, единый пул `database/sql`, проверку соединения и закрытие ресурсов.
-- [x] Подключить HTTP-сервер в `cmd/api`, обработку завершения и логирование без секретов и чувствительных SQL-параметров.
+- [x] Add GORM, the PostgreSQL driver, goose, JWT, and Argon2id; pin dependencies in `go.mod` and `go.sum`.
+- [x] Create HTTP, authentication service, token, and repository packages under `internal/`.
+- [x] Implement environment configuration loading and validation, including the required JWT secret and cookie/CORS settings.
+- [x] Configure GORM connectivity, a single `database/sql` pool, connection checks, and resource cleanup.
+- [x] Wire the HTTP server in `cmd/api`, graceful shutdown, and logging without secrets or sensitive SQL parameters.
 
-### 3. Схема, миграции и репозитории
+### 3. Schema, migrations, and repositories
 
-- [x] Создать SQL-миграции таблиц `users`, `sessions`, `refresh_tokens` с ограничениями уникальности, внешними ключами и индексами.
-- [x] Добавить отдельную команду goose для применения, просмотра состояния и отката миграций; исключить `AutoMigrate` из старта API.
-- [x] Описать GORM-модели с UUID и временными полями без `gorm.Model` и soft delete.
-- [x] Реализовать репозитории пользователей, сессий и refresh-токенов с передачей контекста и поддержкой общей транзакции.
-- [x] Реализовать поиск и блокировку сессии для ротации, сохранение использованных хешей и отзыв сессии.
-- [x] Применить миграции к пустой БД; проверить повторный запуск и откат с последующим применением на отдельной тестовой БД.
+- [x] Create SQL migrations for `users`, `sessions`, and `refresh_tokens` with unique constraints, foreign keys, and indexes.
+- [x] Add a separate goose command for applying, inspecting, and rolling back migrations; exclude `AutoMigrate` from API startup.
+- [x] Define GORM models with UUID and timestamp fields, without `gorm.Model` or soft deletion.
+- [x] Implement user, session, and refresh token repositories with context propagation and shared transaction support.
+- [x] Implement session lookup/locking for rotation, used hash retention, and session revocation.
+- [x] Apply migrations to an empty database; verify reruns and rollback/reapplication on a separate test database.
 
-### 4. Пароли и токены
+### 4. Passwords and tokens
 
-- [x] Реализовать нормализацию и валидацию email, проверку длины пароля без его преобразования.
-- [x] Реализовать хеширование и проверку Argon2id с солью и сохранением параметров.
-- [x] Реализовать выпуск JWT на 15 минут и проверку подписи, HS256 и обязательных claims.
-- [x] Реализовать генерацию refresh-токенов из 32 случайных байт, base64url-кодирование и SHA-256 хеширование.
-- [x] Реализовать фиксированный срок сессии 30 дней и проверку истечения и отзыва.
+- [x] Implement email normalization/validation and password length checks without modifying passwords.
+- [x] Implement Argon2id hashing and verification with salt and stored parameters.
+- [x] Implement 15-minute JWT issuance and signature, HS256, and required claim verification.
+- [x] Implement refresh tokens from 32 random bytes, base64url encoding, and SHA-256 hashing.
+- [x] Implement fixed 30-day session expiry and expiry/revocation checks.
 
-### 5. Сценарии аутентификации
+### 5. Authentication flows
 
-- [x] Реализовать регистрацию: транзакционное создание пользователя, сессии и refresh-токена; обработать конфликт email.
-- [x] Реализовать вход с одинаковой ошибкой для неизвестного email и неверного пароля; создавать независимую сессию на каждый вход.
-- [x] Реализовать атомарную ротацию refresh-токена с блокировкой сессии и повторной проверкой состояния после блокировки.
-- [x] Реализовать обнаружение повторного использования и фиксацию отзыва сессии до возврата ошибки авторизации.
-- [x] Реализовать идемпотентный logout текущей сессии без отзыва сессий других устройств.
-- [x] Реализовать получение текущего пользователя по идентификатору из проверенного JWT.
+- [x] Implement registration: transactional creation of user, session, and refresh token; handle email conflicts.
+- [x] Implement login with identical errors for unknown email and incorrect password; create an independent session for each login.
+- [x] Implement atomic refresh rotation with session locking and token state revalidation after locking.
+- [x] Detect token reuse and commit session revocation before returning an authorization error.
+- [x] Implement idempotent logout for the current session without revoking other devices.
+- [x] Retrieve the current user by the ID from a verified JWT.
 
-### 6. HTTP API и защита запросов
+### 6. HTTP API and request protection
 
-- [x] Добавить DTO запросов и ответов и единый формат ошибок с кодами `400`, `401`, `409`, `500` без раскрытия внутренних деталей.
-- [x] Подключить `POST /api/v1/auth/register` и `POST /api/v1/auth/login` с выдачей JWT в JSON и refresh-токена только в cookie.
-- [x] Подключить `POST /api/v1/auth/refresh` и `POST /api/v1/auth/logout` с заменой и очисткой cookie соответственно.
-- [x] Добавить middleware Bearer JWT и защищённый `GET /api/v1/auth/me`.
-- [x] Настроить атрибуты refresh-cookie и локальное отключение `Secure`; срок cookie ограничить оставшимся временем сессии.
-- [x] Реализовать CORS, preflight, проверку `Origin` и требование `X-CSRF-Protection: 1` для изменяющих запросов без `Origin`.
-- [x] Добавить `Cache-Control: no-store` к ответам с токенами; проверить отсутствие токенов и паролей в логах и ошибках.
+- [x] Add request/response DTOs and a consistent error format with `400`, `401`, `409`, `500`, without internal details.
+- [x] Wire `POST /api/v1/auth/register` and `POST /api/v1/auth/login`, returning JWT in JSON and refresh only in a cookie.
+- [x] Wire `POST /api/v1/auth/refresh` and `POST /api/v1/auth/logout`, replacing and clearing cookies respectively.
+- [x] Add Bearer JWT middleware and protected `GET /api/v1/auth/me`.
+- [x] Configure refresh cookie attributes and local disabling of `Secure`; limit cookie lifetime to the remaining session duration.
+- [x] Implement CORS, preflight, `Origin` checks, and `X-CSRF-Protection: 1` for mutating requests without `Origin`.
+- [x] Add `Cache-Control: no-store` to token responses; verify tokens and passwords do not appear in logs or errors.
 
-### 7. Автоматические тесты
+### 7. Automated tests
 
-- [x] Добавить unit-тесты email, граничных длин пароля, хеширования и проверки Argon2id.
-- [x] Добавить unit-тесты JWT: корректный токен, неверные подпись, алгоритм, issuer, audience, отсутствующие claims и истечение.
-- [x] Подготовить интеграционные тесты с отдельной PostgreSQL через `TEST_DATABASE_URL`, миграциями и изоляцией тестовых данных.
-- [x] Проверить регистрацию, дубликат и конкурентную регистрацию одного email, успешный и неуспешный вход.
-- [x] Проверить `/me`, формат ответов и ошибок, cookie, CORS, preflight и защиту изменяющих запросов.
-- [x] Проверить успешную ротацию, неизвестный токен, истёкшую и отозванную сессии, повторное использование и сохранение отзыва после `401`.
-- [x] Проверить конкурентный refresh: один токен не должен создавать две действующие ветки сессии.
-- [x] Проверить повторный logout, независимость устройств и действие ранее выданного JWT до истечения после logout.
-- [x] Проверить откат незавершённой регистрации и ротации при ошибках записи в БД.
+- [x] Add unit tests for email, password length boundaries, and Argon2id hashing/verification.
+- [x] Add JWT unit tests: valid tokens, invalid signatures, algorithms, issuer, audience, missing claims, and expiry.
+- [x] Prepare integration tests with dedicated PostgreSQL via `TEST_DATABASE_URL`, migrations, and isolated test data.
+- [x] Verify registration, duplicate/concurrent registration of the same email, and successful/failed login.
+- [x] Verify `/me`, response/error formats, cookies, CORS, preflight, and mutating request protection.
+- [x] Verify successful rotation, unknown tokens, expired/revoked sessions, reuse, and revocation persistence after `401`.
+- [x] Verify concurrent refresh: one token must not create two valid session branches.
+- [x] Verify repeated logout, device independence, and validity of previously issued JWTs until expiry after logout.
+- [x] Verify rollback of incomplete registration and rotation on database write failures.
 
-### 8. Документация и итоговая проверка
+### 8. Documentation and final validation
 
-- [x] Обновить README: окружение, настройки, запуск Docker и БД, миграции, запуск API и команды тестирования.
-- [x] Документировать остановку Compose с сохранением данных и отдельно команду удаления локальной БД.
-- [x] Добавить примеры `curl` с cookie jar и CSRF-заголовком для регистрации, входа, `/me`, refresh и logout.
-- [x] Документировать сроки токенов, последовательный refresh, поведение повторного использования и ограничения logout.
-- [x] Выполнить форматирование, `go vet ./...`, `go test ./...`, интеграционные тесты на PostgreSQL и сборку бэкенда.
-- [x] Проверить сохранение пользователей и сессий после перезапуска API и пересоздания контейнера без удаления volume.
-- [x] Выполнить полный сценарий регистрации → `/me` → refresh → logout по README на работающей PostgreSQL в Docker.
-- [x] Сверить результат с планом и обновить все чекбоксы по фактически выполненным работам и проверкам.
+- [x] Update README: environment, configuration, Docker/database startup, migrations, API startup, and test commands.
+- [x] Document Compose shutdown with data retention and, separately, local database deletion.
+- [x] Add `curl` examples with a cookie jar and CSRF header for registration, login, `/me`, refresh, and logout.
+- [x] Document token lifetimes, sequential refresh, reuse behavior, and logout limitations.
+- [x] Run formatting, `go vet ./...`, `go test ./...`, PostgreSQL integration tests, and the backend build.
+- [x] Verify user/session persistence after API restart and container recreation without deleting the volume.
+- [x] Run the full README registration → `/me` → refresh → logout workflow against PostgreSQL in Docker.
+- [x] Compare the result against the plan and update every checkbox based on completed work and validation.
 
-### Результаты выполнения
+### Implementation results
 
-- Go 1.27.1 загружен и проверен по SHA-256 во временной папке `/private/tmp/uptime-toolchain`; системная установка Go не изменялась.
-- Docker работает; PostgreSQL 17 запущен и healthy. Порт `5432` занят другим сервисом, поэтому локальный `.env` использует `POSTGRES_PORT=5433`. Compose сохраняет настраиваемый порт с умолчанием `5432`.
-- Миграция применена к локальной БД; unit-тесты, интеграционные тесты на `uptime_test`, `go vet` и сборка прошли. Проверены конкурентная регистрация/ротация, up/down/up и откат при ошибках записи.
-- Финальная проверка: `gofmt` без замечаний, `go vet ./...`, сборка и `go test -race -count=1 ./...` с PostgreSQL прошли.
-- Сценарий `curl` регистрации → `/me` → refresh → logout → login прошёл; после остановки API и `docker compose up -d --force-recreate --wait postgres` сохранённые пользователь и refresh-сессия остались доступны. Тестовая сессия завершена через logout.
-- API запущен на `127.0.0.1:8080`, PostgreSQL healthy на `127.0.0.1:5433`. Все 50 задач выполнены; восстановление пароля, подтверждение email и фронтенд не добавлялись.
+- Go 1.27.1 was downloaded and verified with SHA-256 in `/private/tmp/uptime-toolchain`; the system Go installation was unchanged.
+- Docker is running; PostgreSQL 17 is healthy. Another service occupies port `5432`, so local `.env` uses `POSTGRES_PORT=5433`. Compose retains a configurable port defaulting to `5432`.
+- The migration was applied locally; unit tests, integration tests on `uptime_test`, `go vet`, and the build passed. Concurrent registration/rotation, up/down/up, and rollback on write failures were verified.
+- Final validation: `gofmt` reported no issues; `go vet ./...`, the build, and `go test -race -count=1 ./...` with PostgreSQL passed.
+- The `curl` registration → `/me` → refresh → logout → login flow passed. After stopping the API and running `docker compose up -d --force-recreate --wait postgres`, the saved user and refresh session remained available. The test session was ended with logout.
+- API running on `127.0.0.1:8080`, PostgreSQL healthy on `127.0.0.1:5433`. All 50 tasks completed; password recovery, email verification, and frontend implementation were not added.
 
-### 9. Контроллеры внутри модулей
+### 9. Controllers within modules
 
-- [x] Перенести HTTP-контроллер аутентификации и интеграционные тесты в `internal/auth/`; удалить `internal/httpapi/`.
-- [x] Выделить общие HTTP-middleware и JSON-ответы в `internal/httpx/`; подключить маршруты через `RegisterRoutes` в `cmd/api/`.
-- [x] Проверить сборку, `go vet` и все тесты с PostgreSQL после переноса без изменения HTTP-контракта. Проверено: `go test -race -count=1 ./...`, `go vet ./...`, `go build -o bin/api ./cmd/api`.
+- [x] Move the authentication HTTP controller and integration tests to `internal/auth/`; remove `internal/httpapi/`.
+- [x] Extract shared HTTP middleware and JSON responses into `internal/httpx/`; compose routes through `RegisterRoutes` in `cmd/api/`.
+- [x] Verify the build, `go vet`, and all PostgreSQL tests after the move without changing the HTTP contract. Validated: `go test -race -count=1 ./...`, `go vet ./...`, `go build -o bin/api ./cmd/api`.

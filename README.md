@@ -1,29 +1,29 @@
 # Uptime App
 
-Два независимых проекта: Go API аутентификации и Next.js интерфейс регистрации, входа и личного кабинета.
+Two independent projects: a Go authentication API and a Next.js interface for registration, login, and the user dashboard.
 
 ```text
 backend/
-  cmd/api/main.go    # HTTP API аутентификации
-  internal/          # Аутентификация, HTTP и работа с БД
+  cmd/api/main.go    # Authentication HTTP API
+  internal/          # Authentication, HTTP, and database access
   go.mod
 frontend/
-  src/app/           # Базовый Next.js App Router
+  src/app/           # Base Next.js App Router
   package.json
   package-lock.json
 ```
 
 ## Backend
 
-Требуется Go 1.26+.
+Requires Go 1.26+.
 
-Инструкции запуска PostgreSQL через Docker Compose, миграций, API и тестов: [backend/README.md](backend/README.md).
+PostgreSQL setup with Docker Compose, migrations, API startup, and testing instructions: [backend/README.md](backend/README.md).
 
-План и состояние задач: [docs/authentication-plan.md](docs/authentication-plan.md).
+Implementation plan and task status: [docs/authentication-plan.md](docs/authentication-plan.md).
 
 ## Frontend
 
-Next.js 16, TypeScript, ESLint. Требуется Node.js 22.12+ и npm.
+Next.js 16, TypeScript, ESLint. Requires Node.js 22.12+ and npm.
 
 ```sh
 cd frontend
@@ -31,18 +31,18 @@ npm ci
 npm run dev
 ```
 
-Фронтенд доступен по адресу http://localhost:3000.
+The frontend is available at http://localhost:3000.
 
-Проверка и сборка: `npm run lint` и `npm run build` из `frontend/`.
+Validation and build: run `npm run lint` and `npm run build` from `frontend/`.
 
-## Совместный запуск
+## Combined startup
 
-Требуются Node.js 22.12+, Go 1.26+, Docker Compose, установленные npm-зависимости и локальные `backend/.env`, `frontend/.env.local` (см. примеры).
+Requires Node.js 22.12+, Go 1.26+, Docker Compose, installed npm dependencies, and local `backend/.env` and `frontend/.env.local` files (see the examples).
 
 ```sh
 node scripts/dev.mjs
 ```
 
-Скрипт поднимает PostgreSQL, применяет миграции и запускает API и фронтенд. Ctrl+C останавливает оба приложения, сохраняя БД. Если Go не находится в PATH, укажите `GO_BIN=/absolute/path/to/go` в `backend/.env`. На macOS Go можно установить постоянно через `brew install go`.
+The script starts PostgreSQL, applies migrations, and launches the API and frontend. Ctrl+C stops both applications while preserving the database. If Go is not on PATH, set `GO_BIN=/absolute/path/to/go` in `backend/.env`. On macOS, install Go permanently with `brew install go`.
 
-Подробные настройки, темы и тесты: [frontend/README.md](frontend/README.md). План и чекбоксы: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
+Configuration details, themes, and tests: [frontend/README.md](frontend/README.md). Plan and checklist: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).

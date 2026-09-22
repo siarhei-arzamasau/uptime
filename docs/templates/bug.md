@@ -1,10 +1,10 @@
-Нужно починить баг
+Fix a bug.
 
-## Воспроизведение
+## Reproduction
 
-Шаги:
+Steps:
 
-Что получаю: ...
-Что ожидаю: ..
+Actual result: ...
+Expected result: ...
 
-Стек-трейс ошибки:
+Error stack trace:
