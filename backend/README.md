@@ -79,6 +79,14 @@ go generate ./cmd/api
 go test ./docs
 ```
 
+Generate a standalone ReDoc HTML page from the current contract:
+
+```sh
+make redoc
+```
+
+This command regenerates the OpenAPI files first, then runs `scripts/build-redoc.mjs` to build `docs/redoc.html`. It requires Make and Node.js 18+. No npm installation is needed. Open the HTML file in a browser: the API description is embedded, and pinned ReDoc `2.5.4` loads from Redocly's CDN with an integrity check, so viewing requires internet access. Rendering starts in the browser to avoid server/client hydration mismatches in CLI-generated HTML. Google Fonts are disabled. The generated HTML is ignored by Git; the annotations and JSON/YAML contracts remain the maintained sources.
+
 `github.com/swaggo/swag/v2/cmd/swag` is pinned to `v2.0.0-rc6` as a Go tool in `go.mod`. The `--v3.1` flag generates OpenAPI 3.1 rather than Swagger 2.0. No global `swag` installation or running database is needed. The relative server URL `/api/v1` lets consumers use their own API host. These files describe the Go backend, not the frontend's cookie-based BFF endpoints; no documentation HTTP endpoint is added.
 
 API metadata and security definitions live in `cmd/api/main.go`. Operation annotations live beside handlers in `internal/auth/controller.go`, `internal/profile/controller.go`, `internal/profile/avatar.go`, and `internal/monitor/controller.go`. Keep separate annotation groups for Bearer and refresh-cookie security definitions. Use named request/response types that the handlers actually serialize; schema tags describe constraints, while controller validation enforces them. Fields are required by default; `next_cursor` explicitly remains optional. Tests check regeneration against both committed files and compare the documented operations with registered routes, including security scheme references.

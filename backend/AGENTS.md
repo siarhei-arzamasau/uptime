@@ -12,6 +12,7 @@ Requires Go 1.26+. Run commands from `backend/`:
 - `go build -o bin/api ./cmd/api`: compile the executable.
 - `go test ./...`: run unit tests; PostgreSQL tests require `TEST_DATABASE_URL`.
 - `go generate ./cmd/api`: regenerate the OpenAPI 3.1 JSON/YAML contract with the pinned swaggo tool.
+- `make redoc`: regenerate the contract and build the ignored `docs/redoc.html` reference page; requires Make and Node.js 18+. The generated page uses pinned ReDoc from its CDN.
 - `gofmt -w .`: format Go source files.
 
 ## Coding Style & Naming
