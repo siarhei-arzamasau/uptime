@@ -19,6 +19,12 @@ Keep backend and frontend dependencies separate. Avoid adding speculative infras
 - Explain the reasoning behind complex arithmetic in a nearby comment instead of paraphrasing the calculation.
 - When changing code, review nearby comments and keep them up to date; remove inaccurate comments.
 
+## API Contract
+
+- Add swaggo annotations to the controller handler for every new backend HTTP route, covering its method and path, request parameters and body, response schemas and status codes, errors, and applicable authentication.
+- When changing a route or its API behavior, including request/response types, validation, status codes, or authentication, update the corresponding annotations and regenerate the OpenAPI contract by running `go generate ./cmd/api` from `backend/`.
+- Run `go test ./docs` from `backend/` to verify contract freshness and route coverage. Include both `backend/docs/swagger.json` and `backend/docs/swagger.yaml` in the same commit as the API change; do not edit generated contracts manually. Follow the additional [backend guidelines](backend/AGENTS.md) for annotation placement and security definitions.
+
 ## Validation
 
 Run the checks documented in each affected project's guide from that project's directory. Report validation performed and any checks that could not run. Update relevant documentation when changing setup or commands.
