@@ -65,17 +65,26 @@ Create a **new, disposable** database once:
 docker compose exec -T postgres createdb -U "$POSTGRES_USER" uptime_migrations_test
 export MIGRATION_DATABASE_URL="$(python3 - <<'PY'
 import os
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 url = urlsplit(os.environ["DATABASE_URL"])
 if url.scheme not in ("postgres", "postgresql") or not url.hostname:
     raise SystemExit("Expected a PostgreSQL connection URL")
-print(urlunsplit(url._replace(path="/uptime_migrations_test")))
+params = dict(parse_qsl(url.query, keep_blank_values=True))
+search_path = params.pop("search_path", None)
+if search_path is not None:
+    # Server options split on whitespace; escape it and literal backslashes.
+    escaped = "".join("\\" + char if char.isspace() or char == "\\" else char
+                      for char in search_path)
+    params["options"] = " ".join(filter(None, [params.get("options", ""),
+                                              "-csearch_path=" + escaped]))
+print(urlunsplit(url._replace(path="/uptime_migrations_test",
+                             query=urlencode(params, quote_via=quote))))
 PY
 )"
 ```
 
-If that database already exists, choose another explicitly disposable name and update **both** commands. Do not drop an existing database or ignore other creation errors. The URL transformation preserves connection options, including a configured search path; inspect them and ensure the chosen schema exists. This example defaults to the normal `public` schema.
+If that database already exists, choose another explicitly disposable name and update **both** commands. Do not drop an existing database or ignore other creation errors. The URL transformation preserves connection settings and converts a pgx-style `search_path` query parameter into the libpq-compatible `options=-csearch_path=...` form, preserving existing server options. Both `psql` and the Go runner then use the same normalized URL. See the [PostgreSQL connection URI and options documentation](https://www.postgresql.org/docs/17/libpq-connect.html#LIBPQ-CONNSTRING). Inspect the resulting settings without printing credentials and ensure the chosen schema exists. This example defaults to the normal `public` schema.
 
 Verify connectivity and target identity using the **same URL** that will be passed to the runner:
 
