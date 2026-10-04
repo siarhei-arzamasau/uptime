@@ -11,6 +11,7 @@ Requires Go 1.26+. Run commands from `backend/`:
 - `go run ./cmd/api`: start the API after exporting `.env` and applying migrations.
 - `go build -o bin/api ./cmd/api`: compile the executable.
 - `go test ./...`: run unit tests; PostgreSQL tests require `TEST_DATABASE_URL`.
+- `go generate ./cmd/api`: regenerate the OpenAPI 3.1 JSON/YAML contract with the pinned swaggo tool.
 - `gofmt -w .`: format Go source files.
 
 ## Coding Style & Naming
@@ -30,3 +31,5 @@ Use GORM only in persistence code. Apply explicit goose migrations; do not intro
 For schema changes or applying migrations, follow the [migration guide](../docs/guides/migrations.md), including target verification and dedicated-database validation.
 
 Keep HTTP controllers and their route registration inside their owning feature module (for example, `internal/auth/controller.go`). Shared HTTP middleware and response helpers belong in `internal/httpx`; compose module routes in `cmd/api`. Do not reintroduce a centralized controller package.
+
+Document every HTTP operation with swaggo annotations on its controller handler, including request parameters, response schemas, errors, and applicable security. API metadata and security definitions live in `cmd/api/main.go`; keep each security definition in a separate comment group so swaggo v2 preserves its name. Use the actual request/response types, regenerate `docs/swagger.json` and `docs/swagger.yaml` after API changes, and commit both contract files. The tests in `docs/` check freshness, route coverage, and security schemes.

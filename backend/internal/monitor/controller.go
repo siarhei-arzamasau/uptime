@@ -18,6 +18,16 @@ import (
 
 type Controller struct{ store *store.Store }
 
+type createRequest struct {
+	URL             string `json:"url" example:"https://example.com"`
+	IntervalSeconds int    `json:"interval_seconds" minimum:"1" maximum:"2147483647" example:"60"`
+}
+
+type listResponse struct {
+	Monitors   []store.Monitor `json:"monitors"`
+	NextCursor string          `json:"next_cursor,omitempty" validate:"optional"`
+}
+
 // NewController binds monitor persistence without starting checks or doing I/O.
 func NewController(s *store.Store) *Controller { return &Controller{store: s} }
 
@@ -28,16 +38,30 @@ func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.H
 	mux.Handle("POST /api/v1/monitors", authenticate(http.HandlerFunc(c.create)))
 }
 
+// create derives ownership from the JWT so request fields cannot select another user.
+// @Summary Create a website monitor
+// @ID createMonitor
+// @Tags monitors
+// @Description Saves configuration only; no outbound checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Param monitor body createRequest true "Website URL and interval in seconds"
+// @Success 201 {object} store.Monitor "Created monitor"
+// @Failure 400 {object} httpx.ErrorResponse "Invalid JSON, URL, or interval"
+// @Failure 401 {object} httpx.ErrorResponse "Invalid access token"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 500 {object} httpx.ErrorResponse "Unable to create monitor"
+// @Router /monitors [post]
 func (c *Controller) create(w http.ResponseWriter, r *http.Request) {
 	id, ok := auth.UserID(r.Context())
 	if !ok {
 		httpx.WriteError(w, 401, "unauthorized", "Please sign in to continue")
 		return
 	}
-	var body struct {
-		URL             string `json:"url"`
-		IntervalSeconds int    `json:"interval_seconds"`
-	}
+	var body createRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024))
 	decoder.DisallowUnknownFields()
 	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" || decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF {
@@ -62,6 +86,20 @@ func (c *Controller) create(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, m)
 }
 
+// list uses an exclusive cursor to preserve ordering across pages with equal timestamps.
+// @Summary List website monitors
+// @ID listMonitors
+// @Tags monitors
+// @Description Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null.
+// @Produce json
+// @Security BearerAuth
+// @Param cursor query string false "Opaque next_cursor from the preceding page" maxLength(128)
+// @Success 200 {object} listResponse "Monitor page"
+// @Failure 400 {object} httpx.ErrorResponse "Invalid page cursor"
+// @Failure 401 {object} httpx.ErrorResponse "Invalid access token"
+// @Failure 403 {object} httpx.ErrorResponse "Origin rejected"
+// @Failure 500 {object} httpx.ErrorResponse "Unable to load monitors"
+// @Router /monitors [get]
 func (c *Controller) list(w http.ResponseWriter, r *http.Request) {
 	id, ok := auth.UserID(r.Context())
 	if !ok {
@@ -79,10 +117,7 @@ func (c *Controller) list(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "internal_error", "Unable to load monitors")
 		return
 	}
-	result := struct {
-		Monitors   []store.Monitor `json:"monitors"`
-		NextCursor string          `json:"next_cursor,omitempty"`
-	}{Monitors: monitors}
+	result := listResponse{Monitors: monitors}
 	if len(monitors) > store.MonitorPageSize {
 		result.Monitors = monitors[:store.MonitorPageSize]
 		last := result.Monitors[len(result.Monitors)-1]

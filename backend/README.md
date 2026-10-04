@@ -65,6 +65,26 @@ The API listens on `127.0.0.1:8080`. The application and migration command read 
 
 Production requires HTTPS and `COOKIE_SECURE=true`; `sslmode=disable` in the example is for the local database. Never commit secrets, `.env`, or cookie jar contents.
 
+## OpenAPI contract
+
+The backend contract is generated from swaggo annotations for all controller operations:
+
+- [OpenAPI 3.1 JSON](docs/swagger.json)
+- [OpenAPI 3.1 YAML](docs/swagger.yaml)
+
+From `backend/`, regenerate both files after changing an endpoint or its request/response types:
+
+```sh
+go generate ./cmd/api
+go test ./docs
+```
+
+`github.com/swaggo/swag/v2/cmd/swag` is pinned to `v2.0.0-rc6` as a Go tool in `go.mod`. The `--v3.1` flag generates OpenAPI 3.1 rather than Swagger 2.0. No global `swag` installation or running database is needed. The relative server URL `/api/v1` lets consumers use their own API host. These files describe the Go backend, not the frontend's cookie-based BFF endpoints; no documentation HTTP endpoint is added.
+
+API metadata and security definitions live in `cmd/api/main.go`. Operation annotations live beside handlers in `internal/auth/controller.go`, `internal/profile/controller.go`, `internal/profile/avatar.go`, and `internal/monitor/controller.go`. Keep separate annotation groups for Bearer and refresh-cookie security definitions. Use named request/response types that the handlers actually serialize; schema tags describe constraints, while controller validation enforces them. Fields are required by default; `next_cursor` explicitly remains optional. Tests check regeneration against both committed files and compare the documented operations with registered routes, including security scheme references.
+
+The contract includes JSON bodies, multipart avatar fields, cursor and filename parameters, authentication, CSRF headers, response envelopes, status codes, and refresh-cookie response headers. For mutating requests, clients must supply an allowed Origin or `X-CSRF-Protection: 1`. Browsers manage HttpOnly refresh cookies automatically; logout also succeeds when no cookie is present.
+
 ## Website monitors
 
 - `POST /api/v1/monitors`: create a monitor with JSON `{"url":"https://example.com","interval_seconds":7}`; returns the monitor with status `201`.

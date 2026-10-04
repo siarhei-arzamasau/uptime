@@ -41,6 +41,26 @@ func decodeAvatar(data []byte) (image.Image, string, error) {
 	}
 	return img, ext, nil
 }
+
+// uploadAvatar validates and re-encodes image data before replacing the stored profile.
+// @Summary Update the name and avatar
+// @ID uploadAvatar
+// @Tags profile
+// @Description Requires exactly one name field and one avatar file. Name is trimmed and limited to 100 Unicode characters without controls; empty clears it. JPEG/PNG files are limited to 5 MiB and 2048 by 2048 pixels. Images are re-encoded without uploaded metadata.
+// @Accept mpfd
+// @Produce json
+// @Security BearerAuth
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Param name formData string true "Profile name; at most 100 Unicode characters after trimming; empty string clears it"
+// @Param avatar formData file true "JPEG or PNG, at most 5 MiB and 2048 by 2048 pixels"
+// @Success 200 {object} profileResponse "Updated profile"
+// @Failure 400 {object} httpx.ErrorResponse "Invalid multipart fields, name, or image"
+// @Failure 401 {object} httpx.ErrorResponse "Invalid access token or deleted user"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 413 {object} httpx.ErrorResponse "Avatar or multipart body too large"
+// @Failure 500 {object} httpx.ErrorResponse "Unable to save avatar"
+// @Router /profile/avatar [post]
 func (c *Controller) uploadAvatar(w http.ResponseWriter, r *http.Request) {
 	id, ok := auth.UserID(r.Context())
 	if !ok {
@@ -146,6 +166,27 @@ func avatarError(w http.ResponseWriter) {
 	slog.Error("avatar save failed")
 	httpx.WriteError(w, 500, "internal_error", "Unable to save avatar. Please try again")
 }
+
+// serveAvatar accepts only generated filenames to prevent traversal of the avatar directory.
+// @Summary Get a public avatar
+// @ID getAvatar
+// @Tags profile
+// @Description Serves a public JPEG or PNG by its generated lowercase UUID filename. Supports conditional and range requests through net/http ServeContent. Files are publicly cacheable for one year.
+// @Produce png,jpeg
+// @Param filename path string true "Lowercase UUID followed by .png or .jpg" example(550e8400-e29b-41d4-a716-446655440000.png)
+// @Param Range header string false "Optional byte range" example(bytes=0-1023)
+// @Param If-Modified-Since header string false "Optional HTTP timestamp for cache validation"
+// @Param If-Range header string false "HTTP timestamp; serve the range only if the image is unchanged"
+// @Success 200 {string} string "JPEG or PNG image bytes"
+// @Failure 206 {string} string "Partial image bytes"
+// @Failure 304 "Image not modified"
+// @Failure 403 "JSON error envelope: Origin rejected"
+// @Failure 404 "Plain text: avatar not found"
+// @Failure 412 "Plain text: conditional request precondition failed"
+// @Failure 416 "Plain text: unsatisfiable byte range"
+// @Header 200,206 {string} Cache-Control "public, max-age=31536000, immutable"
+// @Header 200,206 {string} Last-Modified "HTTP timestamp for conditional requests"
+// @Router /avatars/{filename} [get]
 func (c *Controller) serveAvatar(w http.ResponseWriter, r *http.Request) {
 	filename := r.PathValue("filename")
 	if !avatarFilename.MatchString(filename) {

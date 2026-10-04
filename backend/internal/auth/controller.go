@@ -24,18 +24,26 @@ type Controller struct {
 	cookieSecure bool
 }
 type identityKey struct{}
+type credentialsRequest struct {
+	// Validate the address after normalization so surrounding whitespace remains accepted.
+	Email    string `json:"email" example:"demo@example.com"`
+	Password string `json:"password" minLength:"12" maxLength:"128" example:"correct horse battery staple"`
+}
 type userResponse struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
+	ID        uuid.UUID `json:"id" swaggertype:"string" format:"uuid"`
+	Email     string    `json:"email" format:"email"`
 	Name      string    `json:"name"`
 	AvatarURL string    `json:"avatar_url"`
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt time.Time `json:"created_at" format:"date-time"`
 }
 type tokenResponse struct {
-	User        *userResponse `json:"user,omitempty"`
-	AccessToken string        `json:"access_token"`
-	TokenType   string        `json:"token_type"`
-	ExpiresIn   int           `json:"expires_in"`
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type" enums:"Bearer"`
+	ExpiresIn   int    `json:"expires_in" example:"900"`
+}
+type authResponse struct {
+	tokenResponse
+	User userResponse `json:"user"`
 }
 
 func userDTO(u store.User) userResponse {
@@ -64,10 +72,7 @@ func decodeCredentials(w http.ResponseWriter, r *http.Request) (string, string, 
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	var body struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
+	var body credentialsRequest
 	if err := dec.Decode(&body); err != nil {
 		return "", "", ErrInvalid
 	}
@@ -76,6 +81,26 @@ func decodeCredentials(w http.ResponseWriter, r *http.Request) (string, string, 
 	}
 	return body.Email, body.Password, nil
 }
+
+// register returns tokens only after account and session creation commit together.
+// @Summary Register an account
+// @ID register
+// @Tags auth
+// @Description Accepts only email and password. Sets an HttpOnly refresh_token cookie. JSON body is limited to 4096 bytes. Email is trimmed and lowercased; password length is measured in Unicode characters.
+// @Accept json
+// @Produce json
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Param credentials body credentialsRequest true "Email and password"
+// @Success 201 {object} authResponse "Account and access token"
+// @Failure 400 {object} httpx.ErrorResponse "Invalid JSON or credentials"
+// @Failure 409 {object} httpx.ErrorResponse "Email already registered"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 429 {object} httpx.ErrorResponse "Authentication capacity exhausted"
+// @Failure 500 {object} httpx.ErrorResponse "Internal server error"
+// @Header 201 {string} Set-Cookie "HttpOnly refresh_token; SameSite=Lax; Secure when configured"
+// @Header 429 {string} Retry-After "1 second"
+// @Router /auth/register [post]
 func (a *Controller) register(w http.ResponseWriter, r *http.Request) {
 	email, password, err := decodeCredentials(w, r)
 	if err != nil {
@@ -89,6 +114,26 @@ func (a *Controller) register(w http.ResponseWriter, r *http.Request) {
 	}
 	a.respondTokens(w, result, http.StatusCreated, true)
 }
+
+// login starts an independent session after credentials pass the shared admission gate.
+// @Summary Sign in
+// @ID login
+// @Tags auth
+// @Description Accepts only email and password. Sets an HttpOnly refresh_token cookie. JSON body is limited to 4096 bytes. Email is trimmed and lowercased; password length is measured in Unicode characters.
+// @Accept json
+// @Produce json
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Param credentials body credentialsRequest true "Email and password"
+// @Success 200 {object} authResponse "Account and access token"
+// @Failure 400 {object} httpx.ErrorResponse "Invalid JSON or credentials"
+// @Failure 401 {object} httpx.ErrorResponse "Invalid credentials"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 429 {object} httpx.ErrorResponse "Authentication capacity exhausted"
+// @Failure 500 {object} httpx.ErrorResponse "Internal server error"
+// @Header 200 {string} Set-Cookie "HttpOnly refresh_token; SameSite=Lax; Secure when configured"
+// @Header 429 {string} Retry-After "1 second"
+// @Router /auth/login [post]
 func (a *Controller) login(w http.ResponseWriter, r *http.Request) {
 	email, password, err := decodeCredentials(w, r)
 	if err != nil {
@@ -109,6 +154,23 @@ func refreshCookie(r *http.Request) string {
 	}
 	return c.Value
 }
+
+// refresh rotates the cookie without extending the session's original expiry.
+// @Summary Rotate the refresh token
+// @ID refresh
+// @Tags auth
+// @Description Uses the HttpOnly refresh_token cookie and replaces it on success. Refresh calls must be sequential; replay revokes the session. Session expiry is fixed and invalid cookies are cleared.
+// @Produce json
+// @Security RefreshCookie
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Success 200 {object} tokenResponse "New access token; no user field"
+// @Failure 401 {object} httpx.ErrorResponse "Missing, expired, revoked, or replayed refresh token"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 500 {object} httpx.ErrorResponse "Internal server error"
+// @Header 200 {string} Set-Cookie "Replacement HttpOnly refresh_token"
+// @Header 401 {string} Set-Cookie "Deletes the invalid refresh_token cookie"
+// @Router /auth/refresh [post]
 func (a *Controller) refresh(w http.ResponseWriter, r *http.Request) {
 	result, err := a.service.Refresh(r.Context(), refreshCookie(r))
 	if err != nil {
@@ -120,6 +182,21 @@ func (a *Controller) refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	a.respondTokens(w, result, http.StatusOK, false)
 }
+
+// logout clears the cookie even when its refresh session is already absent.
+// @Summary Sign out
+// @ID logout
+// @Tags auth
+// @Description Idempotently revokes the current refresh session and clears its cookie. The refresh_token cookie is optional. Existing access JWTs remain valid until expiry.
+// @Produce json
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Param Cookie header string false "Optional refresh_token=<token> cookie; browsers send it automatically"
+// @Success 204 "Signed out; no response body"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 500 {object} httpx.ErrorResponse "Internal server error"
+// @Header 204 {string} Set-Cookie "Deletes refresh_token"
+// @Router /auth/logout [post]
 func (a *Controller) logout(w http.ResponseWriter, r *http.Request) {
 	if err := a.service.Logout(r.Context(), refreshCookie(r)); err != nil {
 		handleError(w, err)
@@ -147,6 +224,19 @@ func (a *Controller) Authenticate(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, id)))
 	})
 }
+
+// me reads the JWT owner's current profile rather than embedding profile data in tokens.
+// @Summary Get the authenticated account
+// @ID me
+// @Tags auth
+// @Description Returns the account identified by the Bearer JWT, including a public avatar URL or an empty string.
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} userResponse "Authenticated account"
+// @Failure 401 {object} httpx.ErrorResponse "Invalid access token or deleted user"
+// @Failure 403 {object} httpx.ErrorResponse "Origin rejected"
+// @Failure 500 {object} httpx.ErrorResponse "Internal server error"
+// @Router /auth/me [get]
 func (a *Controller) me(w http.ResponseWriter, r *http.Request) {
 	id, ok := r.Context().Value(identityKey{}).(uuid.UUID)
 	if !ok {
@@ -178,7 +268,8 @@ func (a *Controller) respondTokens(w http.ResponseWriter, result Result, status 
 	body := tokenResponse{AccessToken: result.Access, TokenType: "Bearer", ExpiresIn: int(AccessTTL.Seconds())}
 	if includeUser {
 		u := userDTO(result.User)
-		body.User = &u
+		httpx.WriteJSON(w, status, authResponse{tokenResponse: body, User: u})
+		return
 	}
 	httpx.WriteJSON(w, status, body)
 }

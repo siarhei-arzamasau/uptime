@@ -18,6 +18,24 @@ import (
 	"uptime-app/backend/internal/store"
 )
 
+//go:generate go tool swag init --generalInfo main.go --dir .,../../internal/auth,../../internal/profile,../../internal/monitor,../../internal/httpx,../../internal/store --parseInternal --output ../../docs --outputTypes json,yaml --v3.1 --requiredByDefault
+
+// @title Uptime API
+// @version 1.0.0
+// @description Authentication, profiles, avatars, and website monitor configuration. Unknown JSON fields are rejected. Monitoring checks are not implemented.
+// @description Requests with Origin must match ALLOWED_ORIGIN. Mutating requests without Origin require X-CSRF-Protection: 1. Access JWTs expire after 900 seconds; logout does not invalidate existing JWTs.
+// @servers.url /api/v1
+// @servers.description Current API server
+
+// Separate security comment groups preserve each scheme's name in swaggo v2.
+// @securityDefinitions.bearerauth BearerAuth
+// @description Access JWT issued by registration, login, or refresh.
+// @bearerformat JWT
+
+// @securityDefinitions.apikey RefreshCookie
+// @in cookie
+// @name refresh_token
+// @description HttpOnly refresh cookie scoped to /api/v1/auth. Sessions expire 30 days after login; rotation does not extend expiry.
 func main() {
 	if err := run(); err != nil {
 		slog.Error(err.Error())

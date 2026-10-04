@@ -1,0 +1,1318 @@
+{
+    "components": {
+        "schemas": {
+            "auth.authResponse": {
+                "properties": {
+                    "access_token": {
+                        "type": "string"
+                    },
+                    "expires_in": {
+                        "example": 900,
+                        "type": "integer"
+                    },
+                    "token_type": {
+                        "enum": [
+                            "Bearer"
+                        ],
+                        "type": "string"
+                    },
+                    "user": {
+                        "$ref": "#/components/schemas/auth.userResponse"
+                    }
+                },
+                "required": [
+                    "access_token",
+                    "expires_in",
+                    "token_type",
+                    "user"
+                ],
+                "type": "object"
+            },
+            "auth.credentialsRequest": {
+                "properties": {
+                    "email": {
+                        "description": "Validate the address after normalization so surrounding whitespace remains accepted.",
+                        "example": "demo@example.com",
+                        "type": "string"
+                    },
+                    "password": {
+                        "example": "correct horse battery staple",
+                        "maxLength": 128,
+                        "minLength": 12,
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "email",
+                    "password"
+                ],
+                "type": "object"
+            },
+            "auth.tokenResponse": {
+                "properties": {
+                    "access_token": {
+                        "type": "string"
+                    },
+                    "expires_in": {
+                        "example": 900,
+                        "type": "integer"
+                    },
+                    "token_type": {
+                        "enum": [
+                            "Bearer"
+                        ],
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "access_token",
+                    "expires_in",
+                    "token_type"
+                ],
+                "type": "object"
+            },
+            "auth.userResponse": {
+                "properties": {
+                    "avatar_url": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "email": {
+                        "format": "email",
+                        "type": "string"
+                    },
+                    "id": {
+                        "format": "uuid",
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "avatar_url",
+                    "created_at",
+                    "email",
+                    "id",
+                    "name"
+                ],
+                "type": "object"
+            },
+            "httpx.ErrorDetail": {
+                "properties": {
+                    "code": {
+                        "example": "invalid_request",
+                        "type": "string"
+                    },
+                    "message": {
+                        "example": "Invalid request",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "code",
+                    "message"
+                ],
+                "type": "object"
+            },
+            "httpx.ErrorResponse": {
+                "properties": {
+                    "error": {
+                        "$ref": "#/components/schemas/httpx.ErrorDetail"
+                    }
+                },
+                "required": [
+                    "error"
+                ],
+                "type": "object"
+            },
+            "monitor.createRequest": {
+                "properties": {
+                    "interval_seconds": {
+                        "example": 60,
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer"
+                    },
+                    "url": {
+                        "example": "https://example.com",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "interval_seconds",
+                    "url"
+                ],
+                "type": "object"
+            },
+            "monitor.listResponse": {
+                "properties": {
+                    "monitors": {
+                        "items": {
+                            "$ref": "#/components/schemas/store.Monitor"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "next_cursor": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "monitors"
+                ],
+                "type": "object"
+            },
+            "profile.profileResponse": {
+                "properties": {
+                    "avatar_url": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "email": {
+                        "format": "email",
+                        "type": "string"
+                    },
+                    "id": {
+                        "format": "uuid",
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "avatar_url",
+                    "created_at",
+                    "email",
+                    "id",
+                    "name"
+                ],
+                "type": "object"
+            },
+            "profile.updateRequest": {
+                "properties": {
+                    "name": {
+                        "description": "The 100-character limit applies after trimming, not to the raw JSON string.",
+                        "example": "Sergey",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "name"
+                ],
+                "type": "object"
+            },
+            "store.Monitor": {
+                "properties": {
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "id": {
+                        "format": "uuid",
+                        "type": "string"
+                    },
+                    "interval_seconds": {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer"
+                    },
+                    "url": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "interval_seconds",
+                    "url"
+                ],
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "BearerAuth": {
+                "bearerFormat": "JWT",
+                "description": "Access JWT issued by registration, login, or refresh.",
+                "scheme": "bearer",
+                "type": "http"
+            },
+            "RefreshCookie": {
+                "description": "HttpOnly refresh cookie scoped to /api/v1/auth. Sessions expire 30 days after login; rotation does not extend expiry.",
+                "in": "cookie",
+                "name": "refresh_token",
+                "type": "apiKey"
+            }
+        }
+    },
+    "info": {
+        "description": "Authentication, profiles, avatars, and website monitor configuration. Unknown JSON fields are rejected. Monitoring checks are not implemented.\nRequests with Origin must match ALLOWED_ORIGIN. Mutating requests without Origin require X-CSRF-Protection: 1. Access JWTs expire after 900 seconds; logout does not invalidate existing JWTs.",
+        "title": "Uptime API",
+        "version": "1.0.0"
+    },
+    "externalDocs": {
+        "description": "",
+        "url": ""
+    },
+    "paths": {
+        "/auth/login": {
+            "post": {
+                "description": "Accepts only email and password. Sets an HttpOnly refresh_token cookie. JSON body is limited to 4096 bytes. Email is trimmed and lowercased; password length is measured in Unicode characters.",
+                "operationId": "login",
+                "parameters": [
+                    {
+                        "description": "Allowed frontend origin; required for browser requests",
+                        "in": "header",
+                        "name": "Origin",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be 1 for mutating requests without Origin",
+                        "in": "header",
+                        "name": "X-CSRF-Protection",
+                        "schema": {
+                            "enum": [
+                                "1"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/auth.credentialsRequest",
+                                "summary": "credentials",
+                                "description": "Email and password"
+                            }
+                        }
+                    },
+                    "description": "Email and password",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/auth.authResponse"
+                                }
+                            }
+                        },
+                        "description": "Account and access token",
+                        "headers": {
+                            "Set-Cookie": {
+                                "description": "HttpOnly refresh_token; SameSite=Lax; Secure when configured",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid JSON or credentials"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid credentials"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin or CSRF rejected"
+                    },
+                    "429": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Authentication capacity exhausted",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "1 second",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal server error"
+                    }
+                },
+                "summary": "Sign in",
+                "tags": [
+                    "auth"
+                ]
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "description": "Idempotently revokes the current refresh session and clears its cookie. The refresh_token cookie is optional. Existing access JWTs remain valid until expiry.",
+                "operationId": "logout",
+                "parameters": [
+                    {
+                        "description": "Allowed frontend origin; required for browser requests",
+                        "in": "header",
+                        "name": "Origin",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be 1 for mutating requests without Origin",
+                        "in": "header",
+                        "name": "X-CSRF-Protection",
+                        "schema": {
+                            "enum": [
+                                "1"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Optional refresh_token=\u003ctoken\u003e cookie; browsers send it automatically",
+                        "in": "header",
+                        "name": "Cookie",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Signed out; no response body",
+                        "headers": {
+                            "Set-Cookie": {
+                                "description": "Deletes refresh_token",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin or CSRF rejected"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal server error"
+                    }
+                },
+                "summary": "Sign out",
+                "tags": [
+                    "auth"
+                ]
+            }
+        },
+        "/auth/me": {
+            "get": {
+                "description": "Returns the account identified by the Bearer JWT, including a public avatar URL or an empty string.",
+                "operationId": "me",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/auth.userResponse"
+                                }
+                            }
+                        },
+                        "description": "Authenticated account"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token or deleted user"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin rejected"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal server error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Get the authenticated account",
+                "tags": [
+                    "auth"
+                ]
+            }
+        },
+        "/auth/refresh": {
+            "post": {
+                "description": "Uses the HttpOnly refresh_token cookie and replaces it on success. Refresh calls must be sequential; replay revokes the session. Session expiry is fixed and invalid cookies are cleared.",
+                "operationId": "refresh",
+                "parameters": [
+                    {
+                        "description": "Allowed frontend origin; required for browser requests",
+                        "in": "header",
+                        "name": "Origin",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be 1 for mutating requests without Origin",
+                        "in": "header",
+                        "name": "X-CSRF-Protection",
+                        "schema": {
+                            "enum": [
+                                "1"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/auth.tokenResponse"
+                                }
+                            }
+                        },
+                        "description": "New access token; no user field",
+                        "headers": {
+                            "Set-Cookie": {
+                                "description": "Replacement HttpOnly refresh_token",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing, expired, revoked, or replayed refresh token",
+                        "headers": {
+                            "Set-Cookie": {
+                                "description": "Deletes the invalid refresh_token cookie",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin or CSRF rejected"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal server error"
+                    }
+                },
+                "security": [
+                    {
+                        "RefreshCookie": []
+                    }
+                ],
+                "summary": "Rotate the refresh token",
+                "tags": [
+                    "auth"
+                ]
+            }
+        },
+        "/auth/register": {
+            "post": {
+                "description": "Accepts only email and password. Sets an HttpOnly refresh_token cookie. JSON body is limited to 4096 bytes. Email is trimmed and lowercased; password length is measured in Unicode characters.",
+                "operationId": "register",
+                "parameters": [
+                    {
+                        "description": "Allowed frontend origin; required for browser requests",
+                        "in": "header",
+                        "name": "Origin",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be 1 for mutating requests without Origin",
+                        "in": "header",
+                        "name": "X-CSRF-Protection",
+                        "schema": {
+                            "enum": [
+                                "1"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/auth.credentialsRequest",
+                                "summary": "credentials",
+                                "description": "Email and password"
+                            }
+                        }
+                    },
+                    "description": "Email and password",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/auth.authResponse"
+                                }
+                            }
+                        },
+                        "description": "Account and access token",
+                        "headers": {
+                            "Set-Cookie": {
+                                "description": "HttpOnly refresh_token; SameSite=Lax; Secure when configured",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid JSON or credentials"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin or CSRF rejected"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Email already registered"
+                    },
+                    "429": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Authentication capacity exhausted",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "1 second",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal server error"
+                    }
+                },
+                "summary": "Register an account",
+                "tags": [
+                    "auth"
+                ]
+            }
+        },
+        "/avatars/{filename}": {
+            "get": {
+                "description": "Serves a public JPEG or PNG by its generated lowercase UUID filename. Supports conditional and range requests through net/http ServeContent. Files are publicly cacheable for one year.",
+                "operationId": "getAvatar",
+                "parameters": [
+                    {
+                        "description": "Lowercase UUID followed by .png or .jpg",
+                        "example": "550e8400-e29b-41d4-a716-446655440000.png",
+                        "in": "path",
+                        "name": "filename",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Optional byte range",
+                        "example": "bytes=0-1023",
+                        "in": "header",
+                        "name": "Range",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Optional HTTP timestamp for cache validation",
+                        "in": "header",
+                        "name": "If-Modified-Since",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "HTTP timestamp; serve the range only if the image is unchanged",
+                        "in": "header",
+                        "name": "If-Range",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "image/jpeg": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "image/png": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "description": "JPEG or PNG image bytes",
+                        "headers": {
+                            "Cache-Control": {
+                                "description": "public, max-age=31536000, immutable",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "Last-Modified": {
+                                "description": "HTTP timestamp for conditional requests",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "206": {
+                        "content": {
+                            "image/jpeg": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "image/png": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "description": "Partial image bytes",
+                        "headers": {
+                            "Cache-Control": {
+                                "description": "public, max-age=31536000, immutable",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "Last-Modified": {
+                                "description": "HTTP timestamp for conditional requests",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "304": {
+                        "description": "Image not modified"
+                    },
+                    "403": {
+                        "description": "JSON error envelope: Origin rejected"
+                    },
+                    "404": {
+                        "description": "Plain text: avatar not found"
+                    },
+                    "412": {
+                        "description": "Plain text: conditional request precondition failed"
+                    },
+                    "416": {
+                        "description": "Plain text: unsatisfiable byte range"
+                    }
+                },
+                "summary": "Get a public avatar",
+                "tags": [
+                    "profile"
+                ]
+            }
+        },
+        "/monitors": {
+            "get": {
+                "description": "Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null.",
+                "operationId": "listMonitors",
+                "parameters": [
+                    {
+                        "description": "Opaque next_cursor from the preceding page",
+                        "in": "query",
+                        "name": "cursor",
+                        "schema": {
+                            "maxLength": 128,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/monitor.listResponse"
+                                }
+                            }
+                        },
+                        "description": "Monitor page"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid page cursor"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin rejected"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unable to load monitors"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "List website monitors",
+                "tags": [
+                    "monitors"
+                ]
+            },
+            "post": {
+                "description": "Saves configuration only; no outbound checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.",
+                "operationId": "createMonitor",
+                "parameters": [
+                    {
+                        "description": "Allowed frontend origin; required for browser requests",
+                        "in": "header",
+                        "name": "Origin",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be 1 for mutating requests without Origin",
+                        "in": "header",
+                        "name": "X-CSRF-Protection",
+                        "schema": {
+                            "enum": [
+                                "1"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/monitor.createRequest",
+                                "summary": "monitor",
+                                "description": "Website URL and interval in seconds"
+                            }
+                        }
+                    },
+                    "description": "Website URL and interval in seconds",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/store.Monitor"
+                                }
+                            }
+                        },
+                        "description": "Created monitor"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid JSON, URL, or interval"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin or CSRF rejected"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unable to create monitor"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Create a website monitor",
+                "tags": [
+                    "monitors"
+                ]
+            }
+        },
+        "/profile": {
+            "get": {
+                "operationId": "getProfile",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/profile.profileResponse"
+                                }
+                            }
+                        },
+                        "description": "Current profile"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token or deleted user"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin rejected"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unable to load profile"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Get the profile",
+                "tags": [
+                    "profile"
+                ]
+            },
+            "patch": {
+                "description": "Accepts only name. Surrounding whitespace is trimmed; at most 100 Unicode characters without controls are allowed. An empty string clears the name. JSON body is limited to 4096 bytes.",
+                "operationId": "updateProfile",
+                "parameters": [
+                    {
+                        "description": "Allowed frontend origin; required for browser requests",
+                        "in": "header",
+                        "name": "Origin",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be 1 for mutating requests without Origin",
+                        "in": "header",
+                        "name": "X-CSRF-Protection",
+                        "schema": {
+                            "enum": [
+                                "1"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/profile.updateRequest",
+                                "summary": "profile",
+                                "description": "New name; empty string clears it"
+                            }
+                        }
+                    },
+                    "description": "New name; empty string clears it",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/profile.profileResponse"
+                                }
+                            }
+                        },
+                        "description": "Updated profile"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid JSON or name"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token or deleted user"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin or CSRF rejected"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unable to save profile"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Update the profile name",
+                "tags": [
+                    "profile"
+                ]
+            }
+        },
+        "/profile/avatar": {
+            "post": {
+                "description": "Requires exactly one name field and one avatar file. Name is trimmed and limited to 100 Unicode characters without controls; empty clears it. JPEG/PNG files are limited to 5 MiB and 2048 by 2048 pixels. Images are re-encoded without uploaded metadata.",
+                "operationId": "uploadAvatar",
+                "parameters": [
+                    {
+                        "description": "Allowed frontend origin; required for browser requests",
+                        "in": "header",
+                        "name": "Origin",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be 1 for mutating requests without Origin",
+                        "in": "header",
+                        "name": "X-CSRF-Protection",
+                        "schema": {
+                            "enum": [
+                                "1"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "properties": {
+                                    "avatar": {
+                                        "description": "JPEG or PNG, at most 5 MiB and 2048 by 2048 pixels",
+                                        "format": "binary",
+                                        "type": "string"
+                                    },
+                                    "name": {
+                                        "description": "Profile name; at most 100 Unicode characters after trimming; empty string clears it",
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "avatar"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "description": "Profile name; at most 100 Unicode characters after trimming; empty string clears it",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/profile.profileResponse"
+                                }
+                            }
+                        },
+                        "description": "Updated profile"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid multipart fields, name, or image"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token or deleted user"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin or CSRF rejected"
+                    },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Avatar or multipart body too large"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unable to save avatar"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Update the name and avatar",
+                "tags": [
+                    "profile"
+                ]
+            }
+        }
+    },
+    "openapi": "3.1.0",
+    "servers": [
+        {
+            "description": "Current API server",
+            "url": "/api/v1"
+        }
+    ]
+}

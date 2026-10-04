@@ -8,11 +8,11 @@ import (
 )
 
 type Monitor struct {
-	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id" swaggertype:"string" format:"uuid"`
 	UserID          uuid.UUID `gorm:"type:uuid" json:"-"`
 	URL             string    `json:"url"`
-	IntervalSeconds int       `json:"interval_seconds"`
-	CreatedAt       time.Time `json:"created_at"`
+	IntervalSeconds int       `json:"interval_seconds" minimum:"1" maximum:"2147483647"`
+	CreatedAt       time.Time `json:"created_at" format:"date-time"`
 }
 
 // CreateMonitor inserts an already-validated, owner-assigned monitor under ctx
