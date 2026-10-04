@@ -134,6 +134,8 @@ Errors use `{"error":{"code":"…","message":"…"}}`: 400 for validation, 401 f
 
 ## Validation and migrations
 
+For the agent workflow, SQL template, existing-data upgrade checks, and rollback verification, see the [migration guide](../docs/guides/migrations.md).
+
 ```sh
 gofmt -w .
 go vet ./...
