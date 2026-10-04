@@ -11,6 +11,13 @@ These guidelines apply to both projects. Read the corresponding project guide be
 
 Keep backend and frontend dependencies separate. Avoid adding speculative infrastructure or domain abstractions.
 
+## Code Comments
+
+- Explain why the code is written this way instead of restating what it does; the code already shows the behavior.
+- Do not comment on obvious behavior.
+- Add doc comments to public functions describing their purpose, return values, error conditions, and context handling where applicable.
+- Explain the reasoning behind complex arithmetic instead of paraphrasing the calculation.
+
 ## Validation
 
 Run the checks documented in each affected project's guide from that project's directory. Report validation performed and any checks that could not run. Update relevant documentation when changing setup or commands.
