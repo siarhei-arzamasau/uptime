@@ -27,4 +27,6 @@ Keep dependencies in `go.mod` and, when generated, `go.sum`. Run `go mod tidy` a
 
 Use GORM only in persistence code. Apply explicit goose migrations; do not introduce `AutoMigrate`. Preserve atomic refresh rotation and commit session revocation before returning an authorization error. Never log credential values or SQL parameters.
 
+For schema changes or applying migrations, follow the [migration guide](../docs/guides/migrations.md), including target verification and dedicated-database validation.
+
 Keep HTTP controllers and their route registration inside their owning feature module (for example, `internal/auth/controller.go`). Shared HTTP middleware and response helpers belong in `internal/httpx`; compose module routes in `cmd/api`. Do not reintroduce a centralized controller package.
