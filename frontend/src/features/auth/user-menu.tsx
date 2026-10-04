@@ -6,6 +6,10 @@ import Image from "next/image";
 import type { User } from "./types";
 import styles from "./user-menu.module.css";
 
+/**
+ * Renders account identity, profile navigation, and sign-out; Escape restores trigger focus.
+ * Session mutation and error handling belong to the supplied onSignOut handler.
+ */
 export function UserMenu({ user, busy, onSignOut }: { user: User; busy: boolean; onSignOut: () => void }) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);

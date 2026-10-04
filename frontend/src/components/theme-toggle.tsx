@@ -1,6 +1,10 @@
 "use client";
 import { useState } from "react";
 
+/**
+ * Renders a theme switch using the initial SSR preference; user changes update the DOM
+ * and a one-year preference cookie. A system preference resolves at the time of toggling.
+ */
 export function ThemeToggle({ initialTheme }: { initialTheme: string }) {
   const [theme, setTheme] = useState(initialTheme);
   function toggle() {

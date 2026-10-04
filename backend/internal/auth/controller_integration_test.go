@@ -380,7 +380,6 @@ func TestMigrations(t *testing.T) {
 	f.register(t, "after-migration@example.com")
 }
 
-// Verify the JSON response is consumable by a normal HTTP client as well.
 func TestResponseJSON(t *testing.T) {
 	f := setup(t)
 	w := request(f.handler, "POST", "/api/v1/auth/register", `{"email":"json@example.com","password":"`+password+`"}`, "", nil, map[string]string{"Origin": "http://localhost:3000"})

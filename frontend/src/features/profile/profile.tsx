@@ -10,14 +10,21 @@ import type { User } from "../auth/types";
 import form from "../auth/auth.module.css";
 import styles from "./profile.module.css";
 
+/** Renders a profile workspace keyed by user identity so switching accounts resets drafts. */
 export function Profile() {
   return <Workspace title="Your profile" load={loadProfile}>
     {(user, update) => <ProfileForm key={user.id} user={user} onSaved={update} />}
   </Workspace>;
 }
 
+/**
+ * Renders editable name/avatar drafts while untouched values follow the latest user props.
+ * Successful saves publish the returned user through onSaved; recoverable failures retain
+ * drafts, while a confirmed 401 redirects to login.
+ */
 export function ProfileForm({ user, onSaved }: { user: User; onSaved: (user: User) => void }) {
   const router = useRouter();
+  // Undefined follows revalidated props; an empty string remains an intentional edit.
   const [nameDraft, setNameDraft] = useState<string>();
   const name = nameDraft ?? user.name;
   const [selected, setSelected] = useState<{ file: File; url: string }>();

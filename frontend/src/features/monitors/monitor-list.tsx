@@ -2,6 +2,7 @@ import type { Monitor } from "./types";
 import { formatInterval } from "./format";
 import styles from "./monitors.module.css";
 
+/** Renders URLs as plain text with their configured intervals; no monitoring result is implied. */
 export function MonitorList({ monitors }: { monitors: Monitor[] }) {
   return <div className={styles.list}>
     <div className={styles.listHeading}><h2>Websites <span>{monitors.length}</span></h2><p>Checks have not started yet</p></div>

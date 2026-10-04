@@ -22,9 +22,14 @@ type Controller struct {
 	avatarDir string
 }
 
+// NewController binds profile persistence and the local avatar directory.
+// The directory is created on upload, not during construction.
 func NewController(s *store.Store, avatarDir string) *Controller {
 	return &Controller{store: s, avatarDir: avatarDir}
 }
+
+// RegisterRoutes mounts authenticated profile reads/updates/uploads and public avatar reads.
+// authenticate must supply the auth user ID; request contexts govern database work.
 func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/v1/profile/avatar", authenticate(http.HandlerFunc(c.uploadAvatar)))
 	mux.HandleFunc("GET /api/v1/avatars/{filename}", c.serveAvatar)

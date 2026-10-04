@@ -8,6 +8,10 @@ import { UserMenu } from "./user-menu";
 import { Monitors } from "../monitors/monitors";
 import styles from "./auth.module.css";
 
+/**
+ * Renders a client-validated workspace and account menu, redirecting on a confirmed 401.
+ * Transient load failures retain mounted children/drafts until an explicit retry.
+ */
 export function Workspace({ title, load = session, children }: {
   title: string;
   load?: () => Promise<AuthResult>;
@@ -34,6 +38,7 @@ export function Workspace({ title, load = session, children }: {
     } catch (e) {
       if (!mounted.current || current !== generation.current) return;
       if (e instanceof AuthError && e.status === 401) { setUser(undefined); router.replace("/login"); return; }
+      // Keep mounted editors and their drafts while waiting for an explicit retry.
       paused.current = true; setError({ message: e instanceof Error ? e.message : "Unable to load your workspace.", retry: true });
     }
   }, [router, load]);
@@ -66,4 +71,5 @@ export function Workspace({ title, load = session, children }: {
   </main>;
 }
 
+/** Renders saved website monitors inside Workspace, resetting monitor state when the user changes. */
 export function Dashboard() { return <Workspace title="Your websites">{user => <Monitors key={user.id} />}</Workspace>; }

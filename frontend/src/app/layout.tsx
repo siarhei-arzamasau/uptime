@@ -5,6 +5,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import "./globals.css";
 
 export const metadata: Metadata = { title: "Uptime — Your workspace", description: "Sign in to your Uptime workspace." };
+/**
+ * Renders the shared shell with the server-read theme cookie; account identity is
+ * inserted by the client workspace so server rendering does not rotate auth cookies.
+ */
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const preference = (await cookies()).get("uptime_theme")?.value;
   const theme = preference === "light" || preference === "dark" ? preference : "system";

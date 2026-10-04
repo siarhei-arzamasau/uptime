@@ -1,7 +1,11 @@
+// Matches the PostgreSQL INTEGER used for stored interval_seconds.
 export const MAX_INTERVAL_SECONDS = 2_147_483_647;
 
-// Keep the accepted authority syntax identical to the Go API. International
-// domain names use their ASCII (punycode) form; Unicode paths remain supported.
+/**
+ * Reports whether a URL meets the same explicit authority policy as the Go API.
+ * Invalid input returns false; international hostnames must be punycode, while Unicode
+ * paths remain supported. Platform URL parsing is reserved for IPv6.
+ */
 export function validMonitorURL(value: string): boolean {
   if (new TextEncoder().encode(value).length > 2048 || /[\s\p{Cc}\\#]/u.test(value) || /%(?![0-9a-f]{2})/i.test(value)) return false;
   const match = /^https?:\/\/(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::([0-9]+))?(?:[/?]|$)/i.exec(value);

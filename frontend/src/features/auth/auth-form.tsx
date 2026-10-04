@@ -5,6 +5,10 @@ import { useRef, useState } from "react";
 import { signIn } from "./client";
 import styles from "./auth.module.css";
 
+/**
+ * Renders login/registration with inline failures and retained input; successful sign-in
+ * redirects to the dashboard. Registration also requires password confirmation.
+ */
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const register = mode === "register";
   const router = useRouter();
