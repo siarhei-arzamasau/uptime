@@ -14,10 +14,10 @@ Keep backend and frontend dependencies separate. Avoid adding speculative infras
 ## Code Comments
 
 - Explain why the code is written this way instead of restating what it does; the code already shows the behavior.
-- Do not comment on obvious behavior.
+- Do not comment on obvious behavior; use clear, descriptive names.
 - Add doc comments to public functions describing their purpose, return values, error conditions, and context handling where applicable.
-- Explain the reasoning behind complex arithmetic instead of paraphrasing the calculation.
-- When changing code, review nearby comments and remove any that are inaccurate.
+- Explain the reasoning behind complex arithmetic in a nearby comment instead of paraphrasing the calculation.
+- When changing code, review nearby comments and keep them up to date; remove inaccurate comments.
 
 ## Validation
 
