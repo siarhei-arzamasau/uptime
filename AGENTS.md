@@ -17,6 +17,7 @@ Keep backend and frontend dependencies separate. Avoid adding speculative infras
 - Do not comment on obvious behavior.
 - Add doc comments to public functions describing their purpose, return values, error conditions, and context handling where applicable.
 - Explain the reasoning behind complex arithmetic instead of paraphrasing the calculation.
+- When changing code, review nearby comments and remove any that are inaccurate.
 
 ## Validation
 
