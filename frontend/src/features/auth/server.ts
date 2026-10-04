@@ -38,7 +38,7 @@ function tokens(body: Record<string, unknown>, upstream: Response) {
 function setTokens(res: NextResponse, pair: ReturnType<typeof tokens>, secure: boolean) {
   const common = { httpOnly: true, secure, sameSite: "lax" as const };
   res.cookies.set(ACCESS, pair.access, { ...common, path: "/", maxAge: 900 });
-  // Preserve the backend's absolute expiry, not another 30 days from now.
+  // Rotation must not extend the backend session's fixed lifetime.
   res.cookies.set(REFRESH, pair.refresh, { ...common, path: "/api/auth", expires: pair.expires });
 }
 export type AuthenticatedOperation = {
@@ -50,11 +50,21 @@ export type AuthenticatedOperation = {
   onError?: (status: number) => APIError | undefined;
 };
 
-// Feature handlers supply their operation; token rotation and Go access stay here.
+/**
+ * Returns a feature response or mapped HTTP error after CSRF checks and session recovery.
+ * prepare supplies validation and decoding; tokens stay in HttpOnly cookies. After rotation,
+ * non-401 APIError responses retain the replacement cookies.
+ * Upstream calls use ten-second timeouts rather than the incoming request abort signal.
+ */
 export function handleAuthenticated(req: NextRequest, prepare: () => Promise<AuthenticatedOperation>) {
   return handleRequest(req, undefined, prepare);
 }
 
+/**
+ * Returns the auth/profile response or a mapped HTTP error without exposing token values.
+ * Sign-in writes HttpOnly cookies; protected 401 responses clear them. Upstream calls
+ * use ten-second timeouts rather than the incoming request abort signal.
+ */
 export function handleAuth(req: NextRequest, action: Action) {
   return handleRequest(req, action);
 }
@@ -144,7 +154,7 @@ async function handleRequest(req: NextRequest, action?: Action, prepare?: () => 
     if (!refresh) throw new APIError(401, "unauthorized", "Please sign in to continue.");
     const upstream = await call("auth/refresh", { method: "POST", headers: refreshHeaders });
     const pair = tokens(await upstream.json(), upstream);
-    // Persist a successful rotation even if the protected operation fails.
+    // The old refresh token is already consumed; retain its replacement on non-401 APIError responses.
     try {
       const me = await protectedRequest(pair.access);
       const res = await protectedResponse(me); setTokens(res, pair, secure); return res;
@@ -164,8 +174,8 @@ async function handleRequest(req: NextRequest, action?: Action, prepare?: () => 
   }
 }
 
-// Enforce the upload limit while reading, including clients without Content-Length.
 async function avatarForm(req: NextRequest): Promise<FormData> {
+  // Budget multipart fields/boundaries separately from the 5 MiB file, matching Go.
   const limit = 5 * 1024 * 1024 + 64 * 1024;
   const bytes = await readBody(req, limit, new APIError(413, "avatar_too_large", "Choose an image under 5 MB."));
   let form: FormData;
@@ -180,6 +190,11 @@ async function avatarForm(req: NextRequest): Promise<FormData> {
   return form;
 }
 
+/**
+ * Returns a streamed immutable image response for an opaque avatar filename.
+ * Invalid/missing files return 404, invalid upstream media types 502, and other upstream
+ * failures 503. The fetch has a ten-second timeout and carries no session credentials.
+ */
 export async function serveAvatar(filename: string) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg)$/.test(filename)) return new Response(null, { status: 404 });
   try {

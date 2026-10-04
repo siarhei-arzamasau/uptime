@@ -25,8 +25,8 @@ const maxAvatarBytes = 5 << 20
 var avatarFilename = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg)$`)
 var errInvalidImage = errors.New("invalid image")
 
-// Decode the actual image and encode a fresh file, stripping metadata and trailing data.
 func decodeAvatar(data []byte) (image.Image, string, error) {
+	// Inspect dimensions before allocating decoded pixels; do not trust the upload MIME type.
 	config, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (format != "jpeg" && format != "png") || config.Width < 1 || config.Height < 1 || config.Width > 2048 || config.Height > 2048 {
 		return nil, "", errInvalidImage
@@ -47,6 +47,7 @@ func (c *Controller) uploadAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 401, "unauthorized", "Please sign in to continue")
 		return
 	}
+	// Allow multipart fields/boundaries in addition to the 5 MiB image budget.
 	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarBytes+(64<<10))
 	err := r.ParseMultipartForm(maxAvatarBytes + (64 << 10))
 	if r.MultipartForm != nil {
@@ -82,6 +83,7 @@ func (c *Controller) uploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	// Read one extra byte to detect oversize input instead of accepting a truncated image.
 	data, err := io.ReadAll(io.LimitReader(file, maxAvatarBytes+1))
 	if err != nil {
 		avatarError(w)
@@ -106,6 +108,7 @@ func (c *Controller) uploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer os.Remove(temp.Name())
+	// Re-encode decoded pixels so stored files omit uploaded metadata and trailing data.
 	if ext == ".png" {
 		err = png.Encode(temp, img)
 	} else {

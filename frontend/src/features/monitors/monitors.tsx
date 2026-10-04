@@ -9,6 +9,10 @@ import { MonitorList } from "./monitor-list";
 import type { Monitor } from "./types";
 import styles from "./monitors.module.css";
 
+/**
+ * Renders monitor creation and cursor pagination with separate load/save error recovery.
+ * A confirmed 401 redirects to login; successful creation prepends the saved monitor.
+ */
 export function Monitors() {
   const router = useRouter();
   const [monitors, setMonitors] = useState<Monitor[]>();

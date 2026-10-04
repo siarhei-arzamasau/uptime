@@ -18,8 +18,11 @@ import (
 
 type Controller struct{ store *store.Store }
 
+// NewController binds monitor persistence without starting checks or doing I/O.
 func NewController(s *store.Store) *Controller { return &Controller{store: s} }
 
+// RegisterRoutes mounts authenticated monitor creation and cursor-based listing.
+// authenticate must supply the auth user ID; database work observes each request context.
 func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/v1/monitors", authenticate(http.HandlerFunc(c.list)))
 	mux.Handle("POST /api/v1/monitors", authenticate(http.HandlerFunc(c.create)))

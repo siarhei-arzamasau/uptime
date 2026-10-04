@@ -14,6 +14,9 @@ type Config struct {
 	CookieSecure                                               bool
 }
 
+// Load returns configuration from the process environment; it does not read .env files.
+// Missing DATABASE_URL, invalid COOKIE_SECURE/ALLOWED_ORIGIN, or a short/placeholder
+// JWT_SECRET returns a validation error. Database connectivity is not checked.
 func Load() (Config, error) {
 	c := Config{AvatarDir: env("AVATAR_DIR", "var/avatars"), DatabaseURL: os.Getenv("DATABASE_URL"), HTTPAddr: env("HTTP_ADDR", "127.0.0.1:8080"), JWTSecret: os.Getenv("JWT_SECRET"), Issuer: env("JWT_ISSUER", "uptime-api"), Audience: env("JWT_AUDIENCE", "uptime-web"), Origin: env("ALLOWED_ORIGIN", "http://localhost:3000")}
 	var err error

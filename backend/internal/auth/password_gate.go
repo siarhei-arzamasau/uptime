@@ -29,6 +29,9 @@ func newPasswordGate() *passwordGate {
 	return &passwordGate{tokens: passwordBurst, last: time.Now(), now: time.Now}
 }
 
+// acquire admits work immediately or returns ErrBusy/the existing context error.
+// The caller must invoke the returned release function exactly once. Cancellation
+// after admission does not release the slot or interrupt password hashing.
 func (g *passwordGate) acquire(ctx context.Context) (func(), error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -36,6 +39,7 @@ func (g *passwordGate) acquire(ctx context.Context) (func(), error) {
 		return nil, err
 	}
 	now := g.now()
+	// Cap idle-time credit at the burst limit and ignore backwards clock movement.
 	g.tokens = min(passwordBurst, g.tokens+max(0, now.Sub(g.last).Seconds())*passwordRate)
 	g.last = now
 	if g.active >= passwordConcurrency || g.tokens < 1 {

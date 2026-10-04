@@ -7,6 +7,10 @@ import styles from "./monitors.module.css";
 
 const units = [{ label: "Seconds", seconds: 1 }, { label: "Minutes", seconds: 60 }, { label: "Hours", seconds: 3600 }];
 
+/**
+ * Renders URL/interval entry and calls onCreated with the saved monitor on success.
+ * Validation and service failures preserve the draft; a 401 calls onUnauthorized.
+ */
 export function CreateMonitorForm({ onCreated, onCancel, onUnauthorized }: {
   onCreated: (monitor: Monitor) => void;
   onCancel: () => void;
@@ -32,6 +36,7 @@ export function CreateMonitorForm({ onCreated, onCancel, onUnauthorized }: {
       setFieldError({ field: "url", message: "Enter an HTTP or HTTPS URL up to 2048 bytes without credentials or a fragment; use punycode for international domains." });
       urlInput.current?.focus(); return;
     }
+    // Validate converted seconds so a valid minute/hour count cannot overflow storage.
     const count = Number(interval), seconds = count * unit;
     if (!Number.isInteger(count) || count < 1 || seconds > MAX_INTERVAL_SECONDS) {
       setFieldError({ field: "interval", message: `Enter a whole number from 1 to ${Math.floor(MAX_INTERVAL_SECONDS / unit).toLocaleString("en-US")}.` });

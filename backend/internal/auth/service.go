@@ -28,6 +28,8 @@ type Service struct {
 	passwords *passwordGate
 }
 
+// NewService creates a service with a shared password-work gate and a dummy hash
+// for unknown-account checks. It returns an error if the random salt cannot be generated.
 func NewService(s *store.Store, t *Tokens) (*Service, error) {
 	dummy, err := HashPassword("dummy-password-for-timing")
 	if err != nil {
@@ -35,6 +37,11 @@ func NewService(s *store.Store, t *Tokens) (*Service, error) {
 	}
 	return &Service{store: s, tokens: t, dummyHash: dummy, passwords: newPasswordGate()}, nil
 }
+
+// Register atomically creates a user and session and returns their token pair.
+// It returns ErrInvalid, ErrBusy, ErrConflict, or an underlying creation error.
+// ctx controls admission and database work; an admitted Argon2 hash runs to completion.
+// Discard the result if the transaction fails.
 func (s *Service) Register(ctx context.Context, email, password string) (Result, error) {
 	email, err := Credentials(email, password)
 	if err != nil {
@@ -64,6 +71,11 @@ func (s *Service) Register(ctx context.Context, email, password string) (Result,
 	}
 	return result, err
 }
+
+// Login returns a new session and token pair for valid credentials.
+// Invalid or unknown credentials return ErrUnauthorized; capacity exhaustion returns
+// ErrBusy. ctx controls admission and database work, but cannot interrupt Argon2.
+// Discard the result on a database or session-creation error.
 func (s *Service) Login(ctx context.Context, email, password string) (Result, error) {
 	email, err := Credentials(email, password)
 	if err != nil {
@@ -76,6 +88,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (Result, er
 	defer release()
 	u, err := s.store.UserByEmail(ctx, email)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Spend the same password-check work for unknown accounts to reduce timing disclosure.
 		CheckPassword(s.dummyHash, password)
 		return Result{}, ErrUnauthorized
 	}
@@ -112,6 +125,12 @@ func (s *Service) issue(ctx context.Context, tx *store.Store, session store.Sess
 	}
 	return Result{User: u, Access: access, Refresh: refresh, ExpiresAt: session.ExpiresAt}, nil
 }
+
+// Refresh atomically consumes a refresh token and returns its replacement pair
+// with the original session expiry; the result does not include a user profile.
+// Replay revokes that session before ErrUnauthorized is returned. Invalid, missing,
+// expired, or revoked tokens also return ErrUnauthorized. ctx controls database work;
+// transaction failures return an error and the result must be discarded.
 func (s *Service) Refresh(ctx context.Context, raw string) (Result, error) {
 	if !validRefresh(raw) {
 		return Result{}, ErrUnauthorized
@@ -153,12 +172,15 @@ func (s *Service) Refresh(ctx context.Context, raw string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	// Return the authorization error only after the revocation transaction commits.
+	// Returning ErrUnauthorized inside the transaction would roll back replay revocation.
 	if denied {
 		return Result{}, ErrUnauthorized
 	}
 	return result, nil
 }
+
+// Logout revokes the session associated with raw; invalid or missing tokens are a no-op.
+// ctx controls database work, and lookup or transaction failures are returned.
 func (s *Service) Logout(ctx context.Context, raw string) error {
 	if !validRefresh(raw) {
 		return nil
@@ -179,6 +201,9 @@ func (s *Service) Logout(ctx context.Context, raw string) error {
 	}
 	return err
 }
+
+// Me returns the stored user or ErrUnauthorized if the user no longer exists.
+// ctx controls the lookup; other database errors are returned unchanged.
 func (s *Service) Me(ctx context.Context, id uuid.UUID) (store.User, error) {
 	u, err := s.store.UserByID(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {

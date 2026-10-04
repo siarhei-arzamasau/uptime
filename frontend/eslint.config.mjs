@@ -5,9 +5,8 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Override default ignores of eslint-config-next.
+  // Keep local E2E builds and generated test reports out of source linting.
   globalIgnores([
-    // Default ignores of eslint-config-next:
     ".next/**",
     ".next-e2e/**",
     "playwright-report/**",

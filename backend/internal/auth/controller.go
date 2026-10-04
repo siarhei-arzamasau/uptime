@@ -42,12 +42,14 @@ func userDTO(u store.User) userResponse {
 	return userResponse{u.ID, u.Email, u.Name, u.AvatarURL(), u.CreatedAt}
 }
 
-// NewController creates the authentication module's HTTP controller.
+// NewController binds authentication dependencies and the refresh cookie's Secure policy.
+// It performs no I/O or validation.
 func NewController(service *Service, tokens *Tokens, cookieSecure bool) *Controller {
 	return &Controller{service: service, tokens: tokens, cookieSecure: cookieSecure}
 }
 
-// RegisterRoutes mounts authentication endpoints on the application's shared mux.
+// RegisterRoutes mounts public authentication operations and JWT-protected /me on mux.
+// Request contexts are forwarded to the service; middleware policies belong to the caller.
 func (a *Controller) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/register", a.register)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
@@ -127,7 +129,9 @@ func (a *Controller) logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Authenticate verifies an access token for protected feature routes.
+// Authenticate returns middleware that verifies the bearer JWT and adds its user ID
+// to the existing request context. Invalid credentials produce 401 without calling next.
+// It does not query session state; next remains responsible for observing cancellation.
 func (a *Controller) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Fields(r.Header.Get("Authorization"))
@@ -168,6 +172,7 @@ func (a *Controller) clearCookie(w http.ResponseWriter) {
 func (a *Controller) respondTokens(w http.ResponseWriter, result Result, status int, includeUser bool) {
 	c := a.cookie(result.Refresh)
 	c.Expires = result.ExpiresAt
+	// Zero means a session cookie and negative means deletion, so clamp rounded TTLs.
 	c.MaxAge = max(1, int(time.Until(result.ExpiresAt).Seconds()))
 	http.SetCookie(w, c)
 	body := tokenResponse{AccessToken: result.Access, TokenType: "Bearer", ExpiresIn: int(AccessTTL.Seconds())}
@@ -195,7 +200,8 @@ func handleError(w http.ResponseWriter, err error) {
 	}
 }
 
-// UserID returns the identity established by Authenticate.
+// UserID returns the identity inserted by Authenticate, or uuid.Nil and false if absent.
+// It reads context values without checking cancellation or querying the database.
 func UserID(ctx context.Context) (uuid.UUID, bool) {
 	id, ok := ctx.Value(identityKey{}).(uuid.UUID)
 	return id, ok

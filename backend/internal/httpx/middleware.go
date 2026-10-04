@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-// Protect applies shared CORS, CSRF, cache and request-timeout policies.
+// Protect returns middleware enforcing CORS, CSRF, and uncached API responses.
+// Rejected origins/preflights or missing CSRF protection produce 403 without calling next.
+// Accepted requests carry a ten-second context deadline; next must observe it because
+// this middleware does not force a timeout response.
 func Protect(next http.Handler, allowedOrigin string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

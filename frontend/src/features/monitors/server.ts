@@ -25,6 +25,11 @@ function onError(status: number) {
   if (status === 400) return new APIError(400, "invalid_monitor", "Enter a valid HTTP or HTTPS URL, interval or page cursor.");
   if (status === 413) return new APIError(413, "request_too_large", "Request is too large.");
 }
+/**
+ * Returns a validated monitor page or newly created monitor through the shared auth BFF.
+ * Invalid input/cursors, session failures, and upstream failures become HTTP error responses;
+ * cookie recovery and upstream timeouts follow handleAuthenticated.
+ */
 export function handleMonitors(req: NextRequest, action: "list" | "create") {
   return handleAuthenticated(req, async () => {
     if (action === "list") {
