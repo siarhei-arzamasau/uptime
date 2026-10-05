@@ -1,0 +1,11 @@
+interface:
+  display_name: "Uptime Browser Verification"
+  short_description: "Verify layout and user flows through Playwright MCP"
+  default_prompt: "Use $uptime-browser-verification to verify this implementation's layout and user flows through Playwright MCP before completing the task."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "playwright"
+      description: "Playwright MCP browser tools for mandatory implementation verification"
+policy:
+  allow_implicit_invocation: true

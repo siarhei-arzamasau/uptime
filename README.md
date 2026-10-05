@@ -47,6 +47,32 @@ The script starts PostgreSQL, applies migrations, and launches the API and front
 
 Configuration details, themes, and tests: [frontend/README.md](frontend/README.md). Plan and checklist: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
 
+## Browser verification
+
+Use **[Playwright MCP](https://github.com/microsoft/playwright-mcp)** for browser
+work in this project. After implementation, apply
+[$uptime-browser-verification](.agents/skills/uptime-browser-verification/SKILL.md)
+to verify the affected user flows and desktop/mobile layout before completing the
+task. Builds and automated tests complement this mandatory browser check.
+
+If Playwright MCP is not connected, add the following server to the project's
+`.codex/config.toml`, preserving any existing MCP entries:
+
+```toml
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest", "--isolated"]
+startup_timeout_sec = 120
+```
+
+Node.js and npm must be on PATH. Reload the MCP configuration or start a new Codex
+session to expose the tools. The isolated browser session avoids reusing personal
+browser state. For checks that change data, start `node scripts/dev.mjs --e2e`
+from the repository root and use `http://localhost:3001` with the dedicated
+`uptime_e2e_test` database; do not run manual verification and the automated E2E
+runner on those ports at the same time. A missing MCP connection or unavailable
+application must be reported as an incomplete verification.
+
 ## Code review
 
 Use the project skill `$uptime-code-review` to review a commit, PR, or local diff. It runs scoped static checks before reviewing the [product architecture](.agents/skills/uptime-code-review/references/architecture.md) and [checklist](.agents/skills/uptime-code-review/references/review-checklist.md), then reports actionable findings from P0 (critical) to P3 (low).

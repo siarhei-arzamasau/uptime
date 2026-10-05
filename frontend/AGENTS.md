@@ -22,6 +22,8 @@ Match existing TypeScript formatting: two-space indentation, double quotes, and 
 
 Use Vitest for Node-side session logic and jsdom with React Testing Library for components. Colocate `*.test.ts`/`*.test.tsx` files. Run `npm test`, `npm run lint`, and `npm run build`; authentication changes also require `npm run test:e2e` against the dedicated PostgreSQL database. Coverage is available via `npm run test:coverage`, without a numeric threshold. Playwright covers desktop and mobile. Never point E2E at the working database. Include screenshots in PRs for visible UI changes.
 
+Before completing an implementation task, use [the mandatory browser verification skill](../.agents/skills/uptime-browser-verification/SKILL.md) to check layout and affected user flows through **Playwright MCP**. Follow the root browser-tool requirement; passing automated tests does not replace this check.
+
 ## Dependencies & Agent Instructions
 
 Keep `package-lock.json` synchronized with dependency changes. Consult the installed Next.js documentation as directed below before writing frontend code. Preserve the framework-managed instruction block.
