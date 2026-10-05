@@ -149,7 +149,8 @@ class Runner:
                     continue
                 lines = enumerate(data.decode("utf-8", errors="replace").splitlines(), 1)
             else:
-                patch = git(self.repo, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "-U0", *diff_args, "--", name)
+                # Changed filenames can contain Git pathspec magic; inspect their literal paths.
+                patch = git(self.repo, "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "-U0", *diff_args, "--", name)
                 added = []
                 line_number = 0
                 for line in patch.splitlines():

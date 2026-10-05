@@ -177,6 +177,19 @@ class RunnerTests(unittest.TestCase):
         self.assertNotIn(credential, report)
         self.assertNotIn(credential, static_checks.redact(f"error: {credential}"))
 
+    def test_pathspec_magic_filenames_cannot_hide_credentials(self):
+        credential = "sensitive" + "-value-0123456789"
+        for name in (":(exclude)**", "secret[1].txt", "secret*.txt"):
+            with self.subTest(name=name):
+                self.base = self.git("rev-parse", "HEAD").strip()
+                self.write(name, "API_KEY=" + credential + "\n")
+                self.commit()
+                code, report = self.run_checks()
+                self.assertEqual(code, 2, report)
+                self.assertIn(f"{name!r}:1 (credential literal", report)
+                self.assertNotIn("PASS: added-line credential scan", report)
+                self.assertNotIn(credential, report)
+
     def test_unquoted_environment_secret_is_flagged(self):
         credential = "sensitive" + "-value-0123456789"
         self.write("backend/.env.example", "JWT_SECRET=" + credential + "\n")
