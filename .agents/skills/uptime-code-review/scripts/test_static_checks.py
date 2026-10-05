@@ -192,6 +192,45 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 0, report)
         self.assertNotIn("binary; inspect separately", report)
 
+    def test_gitattributes_binary_diff_is_incomplete(self):
+        self.write(".gitattributes", "secret.txt binary\n")
+        credential = "sensitive" + "-value-0123456789"
+        self.write("secret.txt", "API_KEY=" + credential + "\n")
+        self.commit()
+        code, report = self.run_checks()
+        self.assertEqual(code, 2, report)
+        self.assertIn("BLOCKED: added-line credential scan", report)
+        self.assertNotIn("PASS: added-line credential scan", report)
+        self.assertNotIn(credential, report)
+
+    def test_untracked_binary_diff_is_incomplete(self):
+        file = self.repo / "asset.bin"
+        file.write_bytes(b"image\x00data")
+        code, report = self.run_checks("--worktree")
+        self.assertEqual(code, 2, report)
+        self.assertNotIn("PASS: added-line credential scan", report)
+        self.assertIn("some changed files were not inspected", report)
+
+    def test_untracked_oversized_file_is_incomplete(self):
+        self.write("large.txt", "x" * (1024 * 1024 + 1))
+        code, report = self.run_checks("--worktree")
+        self.assertEqual(code, 2, report)
+        self.assertNotIn("PASS: added-line credential scan", report)
+        self.assertIn("over 1 MiB", report)
+
+    def test_dry_run_plans_frontend_without_dependencies(self):
+        self.write("frontend/local.ts", "export const value = 1;\n")
+        self.commit()
+        for file in (self.repo / "frontend/node_modules").rglob("*"):
+            if file.is_file():
+                file.unlink()
+        code, report = self.run_checks("--dry-run")
+        self.assertEqual(code, 0, report)
+        self.assertIn("PLAN: Next.js ESLint", report)
+        self.assertIn("PLAN: Next.js route types", report)
+        self.assertIn("PLAN: TypeScript", report)
+        self.assertFalse(self.commands())
+
     def test_placeholder_does_not_trigger_secret_candidate(self):
         self.write("backend/.env.example", 'JWT_SECRET="replace-this-with-a-random-secret"\n')
         self.commit()

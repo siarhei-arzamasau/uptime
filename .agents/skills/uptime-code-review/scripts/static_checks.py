@@ -125,18 +125,22 @@ class Runner:
             self.report("PLAN", "added-line credential scan")
             return
         matches = []
+        coverage_complete = True
         for name in changed:
             if name in untracked:
                 file = self.repo / name
                 if file.is_symlink() or not file.is_file():
-                    self.report("SKIP", "credential scan", f"{name!r}: non-regular file")
+                    self.report("BLOCKED", "credential scan", f"{name!r}: non-regular file; inspect separately")
+                    coverage_complete = False
                     continue
                 if file.stat().st_size > 1024 * 1024:
                     self.report("BLOCKED", "credential scan", f"{name!r}: over 1 MiB; inspect separately")
+                    coverage_complete = False
                     continue
                 data = file.read_bytes()
                 if b"\0" in data:
-                    self.report("SKIP", "credential scan", f"{name!r}: binary; inspect separately")
+                    self.report("BLOCKED", "credential scan", f"{name!r}: binary; inspect separately")
+                    coverage_complete = False
                     continue
                 lines = enumerate(data.decode("utf-8", errors="replace").splitlines(), 1)
             else:
@@ -153,7 +157,8 @@ class Runner:
                     elif line.startswith(" "):
                         line_number += 1
                 if any(line.startswith("Binary files ") and line.endswith(" differ") for line in patch.splitlines()):
-                    self.report("SKIP", "credential scan", f"{name!r}: binary; inspect separately")
+                    self.report("BLOCKED", "credential scan", f"{name!r}: binary; inspect separately")
+                    coverage_complete = False
                 lines = added
             for number, line in lines:
                 for label, pattern in SECRET_PATTERNS:
@@ -164,7 +169,9 @@ class Runner:
         if matches:
             for name, number, label in sorted(set(matches)):
                 self.report("REVIEW", "credential candidate", f"{name!r}:{number} ({label}; value withheld)")
-        else:
+        if not coverage_complete:
+            self.report("BLOCKED", "added-line credential scan", "some changed files were not inspected")
+        elif not matches:
             self.report("PASS", "added-line credential scan", "heuristic only; manual security review remains required")
 
     def backend(self, changed, output_dir):
@@ -186,7 +193,7 @@ class Runner:
         """Lint and generate route types before strict no-emit TypeScript validation."""
         cwd = self.repo / "frontend"
         packages = ("eslint/bin/eslint.js", "next/dist/bin/next", "typescript/bin/tsc")
-        if not (cwd / "package.json").is_file() or any(not (cwd / "node_modules" / name).is_file() for name in packages):
+        if not self.args.dry_run and (not (cwd / "package.json").is_file() or any(not (cwd / "node_modules" / name).is_file() for name in packages)):
             self.report("BLOCKED", "Next.js checks", "install the existing frontend lockfile dependencies first (npm ci)")
             return
         self.check("Next.js ESLint", ["npm", "run", "lint"], cwd)

@@ -29,7 +29,7 @@ python3 .agents/skills/uptime-code-review/scripts/static_checks.py --base origin
 python3 .agents/skills/uptime-code-review/scripts/static_checks.py --base origin/main --worktree
 ```
 
-Substitute the resolved user-requested refs. Use `--dry-run` to inspect the plan, `--projects both` to explicitly check both projects, and `--timeout 180` to bound each command. `--help` documents these options.
+Substitute the resolved user-requested refs. Use `--dry-run` to inspect the plan even before frontend dependencies are installed, `--projects both` to explicitly check both projects, and `--timeout 180` to bound each command. `--help` documents these options.
 
 Checks run on the checkout, so committed mode requires its HEAD to match the reviewed head and no tracked modifications. Use a suitable isolated checkout when necessary; never reset or stash the user's work. Review changes to package scripts, Next/ESLint configuration, or executable tools for unsafe side effects before invoking them. This preparation is not the substantive review. Next type generation loads configuration and can read local environment files; use a checkout without real credentials for untrusted changes. The runner is not a security sandbox.
 
@@ -37,7 +37,7 @@ The runner checks added lines for likely credential material without displaying 
 
 The runner itself can be validated with `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .agents/skills/uptime-code-review/scripts -p 'test_*.py'`.
 
-Read every result. Exit 0 means selected checks passed, 1 means at least one failed, and 2 means validation is incomplete or the comparison is invalid. Missing tools/dependencies, timeouts, environment errors, and suspected secret matches are evidence to investigate, not automatic product findings. Report unavailable checks, inspect their source/cause, and continue all independent review work. Never equate a regex scan or passing checks with a security guarantee.
+Read every result. Exit 0 means selected checks passed, 1 means at least one failed, and 2 means validation is incomplete or the comparison is invalid. Missing tools/dependencies, timeouts, environment errors, and suspected secret matches are evidence to investigate, not automatic product findings. Report unavailable checks, inspect their source/cause, and continue all independent review work. Binary, non-regular, or oversized untracked files that the credential scanner cannot inspect make its result incomplete; inspect them separately before claiming validation. Never equate a regex scan or passing checks with a security guarantee.
 
 ## 3. Walk the checklist
 
