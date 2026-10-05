@@ -46,3 +46,31 @@ node scripts/dev.mjs
 The script starts PostgreSQL, applies migrations, and launches the API and frontend. Ctrl+C stops both applications while preserving the database. If Go is not on PATH, set `GO_BIN=/absolute/path/to/go` in `backend/.env`. On macOS, install Go permanently with `brew install go`.
 
 Configuration details, themes, and tests: [frontend/README.md](frontend/README.md). Plan and checklist: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
+
+## Code review
+
+Use the project skill `$uptime-code-review` to review a commit, PR, or local diff. It runs scoped static checks before reviewing the [product architecture](.agents/skills/uptime-code-review/references/architecture.md) and [checklist](.agents/skills/uptime-code-review/references/review-checklist.md), then reports actionable findings from P0 (critical) to P3 (low).
+
+The project also includes [$vercel-react-best-practices](.agents/skills/vercel-react-best-practices/SKILL.md) for React and Next.js performance guidance, with its supporting rules kept locally. The installed source is `vercel-labs/agent-skills`, revision `063bee94c3f4df8453406c830b0a7df0f2860278`, under `skills/react-best-practices`.
+
+The following Go skills are available at project scope:
+
+- [$golang-code-style](.agents/skills/golang-code-style/SKILL.md)
+- [$golang-testing](.agents/skills/golang-testing/SKILL.md)
+- [$golang-error-handling](.agents/skills/golang-error-handling/SKILL.md)
+- [$golang-design-patterns](.agents/skills/golang-design-patterns/SKILL.md)
+- [$golang-security](.agents/skills/golang-security/SKILL.md)
+- [$golang-performance](.agents/skills/golang-performance/SKILL.md)
+- [$golang-concurrency](.agents/skills/golang-concurrency/SKILL.md)
+
+These skills come from `samber/cc-skills-golang`, revision `8e899e20ff0cd4dc524af3993e4c62d8ee8c5717`, under the corresponding `skills/<skill-name>` directories. Their references and evaluation fixtures are kept locally, with the upstream MIT license notice in each skill directory. Apply them to the requested Go task; repository instructions and the product architecture remain authoritative.
+
+To run only the checks from the repository root:
+
+```sh
+python3 .agents/skills/uptime-code-review/scripts/static_checks.py --base origin/main --head HEAD
+# Include staged, unstaged, and untracked changes:
+python3 .agents/skills/uptime-code-review/scripts/static_checks.py --base origin/main --worktree
+```
+
+See [SKILL.md](.agents/skills/uptime-code-review/SKILL.md) for comparison modes, prerequisites, and validation limits.
