@@ -239,6 +239,39 @@ class RunnerTests(unittest.TestCase):
                 self.assertNotIn("PASS: added-line credential scan", report)
                 self.assertNotIn(credential, report)
 
+    @unittest.skipUnless(os.name == "posix", "requires byte-preserving POSIX arguments")
+    def test_non_utf8_git_filenames_cannot_hide_credentials(self):
+        credential = "sensitive" + "-value-0123456789"
+        self.git("config", "core.quotePath", "false")
+        for mode in ("committed", "staged"):
+            with self.subTest(mode=mode):
+                self.base = self.git("rev-parse", "HEAD").strip()
+                raw_name = f"secret-{mode}-".encode() + bytes([255]) + b".txt"
+                name = os.fsdecode(raw_name)
+                blob = subprocess.check_output(["git", "hash-object", "-w", "--stdin"],
+                    cwd=self.repo, input=("API_KEY=" + credential + "\n").encode()).strip()
+                # Git permits byte filenames even on filesystems that cannot create them.
+                subprocess.run(["git", "update-index", "-z", "--index-info"], cwd=self.repo,
+                    input=b"100644 " + blob + b"\t" + raw_name + b"\0", check=True)
+                self.git("update-index", "--assume-unchanged", "--", name)
+                if mode == "committed":
+                    self.git("commit", "-qm", "fixture byte filename")
+                code, report = self.run_checks(*([] if mode == "committed" else ["--worktree"]))
+                self.assertEqual(code, 2, report)
+                self.assertIn(f"{name!r}:1 (credential literal", report)
+                self.assertNotIn(credential, report)
+                if mode == "staged":
+                    self.git("commit", "-qm", "fixture byte filename")
+
+    def test_non_utf8_text_is_fingerprinted_without_mutation(self):
+        file = self.repo / "notes.txt"
+        file.write_bytes(b"unchanged prefix\n" + bytes([255]) + b"\n")
+        before = file.read_bytes()
+        self.git("add", "notes.txt")
+        code, report = self.run_checks("--worktree")
+        self.assertEqual(code, 0, report)
+        self.assertEqual(file.read_bytes(), before)
+
     def test_unquoted_environment_secret_is_flagged(self):
         credential = "sensitive" + "-value-0123456789"
         self.write("backend/.env.example", "JWT_SECRET=" + credential + "\n")

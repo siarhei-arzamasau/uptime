@@ -41,13 +41,13 @@ class InvalidComparison(Exception):
     """Indicate missing history or a checkout that cannot validate the target."""
 
 
-def invoke(argv, cwd, timeout, env=None):
+def invoke(argv, cwd, timeout, env=None, *, decode_errors="replace"):
     """Return exit status and merged output, killing the process group on timeout."""
     proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=(os.name == "posix"))
     try:
         output, _ = proc.communicate(timeout=timeout)
-        return proc.returncode, output.decode("utf-8", errors="replace")
+        return proc.returncode, output.decode("utf-8", errors=decode_errors)
     except subprocess.TimeoutExpired:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
@@ -59,14 +59,15 @@ def invoke(argv, cwd, timeout, env=None):
 
 def git(repo, *args):
     """Read Git metadata without executing external diff helpers; raise on failure."""
-    code, output = invoke(["git", *args], repo, 30)
+    # Git paths are byte strings; replacement decoding would change their identity.
+    code, output = invoke(["git", *args], repo, 30, decode_errors="surrogateescape")
     if code:
         raise InvalidComparison("Git could not resolve the comparison; fetch/verify the requested refs.")
     return output
 
 
 def paths(output):
-    """Decode a NUL-delimited Git path list, preserving spaces and line breaks."""
+    """Split Git paths without losing filename bytes, spaces, or line breaks."""
     return [item for item in output.split("\0") if item]
 
 
@@ -219,7 +220,7 @@ def fingerprint(repo):
     """Capture tracked modifications without printing source or resetting files."""
     diff = git(repo, "diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD")
     index = git(repo, "diff", "--cached", "--no-ext-diff", "--no-textconv", "--binary", "HEAD")
-    return hashlib.sha256((diff + "\0" + index).encode()).hexdigest()
+    return hashlib.sha256((diff + "\0" + index).encode("utf-8", errors="surrogateescape")).hexdigest()
 
 
 def main(argv=None):
