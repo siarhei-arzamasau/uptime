@@ -59,6 +59,13 @@ The launcher reads `DATABASE_URL` from this checkout's ignored `backend/.env` an
 accepts only local PostgreSQL addresses. Set up that file and start PostgreSQL using
 [the backend instructions](backend/README.md). Each worktree needs its own local
 `backend/.env`; credentials are never stored in the MCP configuration.
+Use `localhost`, `127.0.0.1`, or `[::1]` in the URI authority. Connection-address
+query fields (`host`, `hostaddr`, and `service`) and raw URI fragments are rejected;
+other options such as `sslmode` remain supported. The launcher removes ambient
+`PG*` variables before starting MCP so they cannot change the connection target.
+
+Run the launcher regressions with `npm test -- ../scripts/postgres-mcp.test.mjs`
+from `frontend/`. They use a fake `uvx` and never connect to PostgreSQL.
 
 The first launch downloads pinned postgres-mcp and MCP SDK versions. Restart Codex
 or start a new chat after adding the configuration, then check that `uptime-postgres`
