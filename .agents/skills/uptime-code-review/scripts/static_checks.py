@@ -124,10 +124,11 @@ class Runner:
             print(redact(output)[:6000], flush=True)
         return passed
 
-    def secrets(self, diff_args, changed, untracked):
+    def secrets(self, diff_args, changed, untracked, *, snapshot=""):
         """Scan added textual lines and report only candidate locations, never values."""
+        scan_name = (snapshot + " " if snapshot else "") + "added-line credential scan"
         if self.args.dry_run:
-            self.report("PLAN", "added-line credential scan")
+            self.report("PLAN", scan_name)
             return
         matches = []
         coverage_complete = True
@@ -174,11 +175,11 @@ class Runner:
                             matches.append((name, number, label))
         if matches:
             for name, number, label in sorted(set(matches)):
-                self.report("REVIEW", "credential candidate", f"{name!r}:{number} ({label}; value withheld)")
+                self.report("REVIEW", "credential candidate", f"{name!r}:{number} ({label}; value withheld)" + (f" [{snapshot}]" if snapshot else ""))
         if not coverage_complete:
-            self.report("BLOCKED", "added-line credential scan", "some changed files were not inspected")
+            self.report("BLOCKED", scan_name, "some changed files were not inspected")
         elif not matches:
-            self.report("PASS", "added-line credential scan", "heuristic only; manual security review remains required")
+            self.report("PASS", scan_name, "heuristic only; manual security review remains required")
 
     def backend(self, changed, output_dir):
         """Check formatting, vet, API compilation, and generated-contract freshness."""
@@ -248,8 +249,12 @@ def main(argv=None):
             raise InvalidComparison("Checkout contains local project changes; use --worktree or an isolated clean checkout.")
         diff_args = [merge_base] if args.worktree else [merge_base, head]
         changed = paths(git(repo, "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", *diff_args))
+        index_args = ["--cached", merge_base]
+        index_changed = []
         if args.worktree:
-            changed = sorted(set(changed + untracked))
+            # The working snapshot can undo a staged edit without removing it from the index.
+            index_changed = paths(git(repo, "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", *index_args))
+            changed = sorted(set(changed + index_changed + untracked))
         projects = select_projects(changed) if args.projects == "auto" else {"backend", "frontend"} if args.projects == "both" else {args.projects}
         print(f"Base: {base}\nHead: {head}\nMerge base: {merge_base}\nMode: {'worktree' if args.worktree else 'committed'}\nChanged paths: {len(changed)}\nProjects: {', '.join(sorted(projects)) or 'none (documentation/tooling only)'}", flush=True)
         runner = Runner(args, repo)
@@ -258,6 +263,8 @@ def main(argv=None):
         # Git --check prints source lines: withhold them so credentials cannot leak.
         runner.check("diff whitespace", ["git", "diff", "--check", "--no-ext-diff", "--no-textconv", *diff_args], repo, hide_output=True)
         if args.worktree:
+            runner.secrets(index_args, index_changed, set(), snapshot="index")
+            runner.check("index diff whitespace", ["git", "diff", "--check", "--no-ext-diff", "--no-textconv", *index_args], repo, hide_output=True)
             whitespace = []
             for name in untracked:
                 file = repo / name

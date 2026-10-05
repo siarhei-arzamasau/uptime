@@ -141,6 +141,35 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 2, report)
         self.assertIn("local project changes", report)
 
+    def test_worktree_scan_detects_credentials_only_in_index(self):
+        credential = "sensitive" + "-value-0123456789"
+        self.write("README.md", "API_KEY=" + credential + "\n")
+        self.git("add", "README.md")
+        self.write("README.md", "Fixture\n")
+        code, report = self.run_checks("--worktree")
+        self.assertEqual(code, 2, report)
+        self.assertIn("README.md':1 (credential literal", report)
+        self.assertNotIn(credential, report)
+        self.assertEqual(self.git("show", ":README.md"), "API_KEY=" + credential + "\n")
+        self.assertEqual((self.repo / "README.md").read_text(), "Fixture\n")
+
+    def test_index_only_project_change_selects_language_checks(self):
+        self.write("backend/index.go", "package backend\n")
+        self.git("add", "backend/index.go")
+        (self.repo / "backend/index.go").unlink()
+        code, report = self.run_checks("--worktree")
+        self.assertEqual(code, 0, report)
+        self.assertIn("Projects: backend", report)
+        self.assertTrue(any(call['tool'] == 'go' for call in self.commands()))
+
+    def test_index_only_whitespace_is_checked(self):
+        self.write("README.md", "Staged trailing space \n")
+        self.git("add", "README.md")
+        self.write("README.md", "Fixture\n")
+        code, report = self.run_checks("--worktree")
+        self.assertEqual(code, 1, report)
+        self.assertIn("FAIL: index diff whitespace", report)
+
     def test_missing_dependencies_are_incomplete(self):
         self.write("frontend/local.ts", "export const value = 1;\n")
         self.commit()
