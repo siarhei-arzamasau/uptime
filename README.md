@@ -53,6 +53,18 @@ Use the project skill `$uptime-code-review` to review a commit, PR, or local dif
 
 The project also includes [$vercel-react-best-practices](.agents/skills/vercel-react-best-practices/SKILL.md) for React and Next.js performance guidance, with its supporting rules kept locally. The installed source is `vercel-labs/agent-skills`, revision `063bee94c3f4df8453406c830b0a7df0f2860278`, under `skills/react-best-practices`.
 
+The following Go skills are available at project scope:
+
+- [$golang-code-style](.agents/skills/golang-code-style/SKILL.md)
+- [$golang-testing](.agents/skills/golang-testing/SKILL.md)
+- [$golang-error-handling](.agents/skills/golang-error-handling/SKILL.md)
+- [$golang-design-patterns](.agents/skills/golang-design-patterns/SKILL.md)
+- [$golang-security](.agents/skills/golang-security/SKILL.md)
+- [$golang-performance](.agents/skills/golang-performance/SKILL.md)
+- [$golang-concurrency](.agents/skills/golang-concurrency/SKILL.md)
+
+These skills come from `samber/cc-skills-golang`, revision `8e899e20ff0cd4dc524af3993e4c62d8ee8c5717`, under the corresponding `skills/<skill-name>` directories. Their references and evaluation fixtures are kept locally, with the upstream MIT license notice in each skill directory. Apply them to the requested Go task; repository instructions and the product architecture remain authoritative.
+
 To run only the checks from the repository root:
 
 ```sh
