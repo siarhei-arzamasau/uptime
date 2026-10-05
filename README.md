@@ -46,3 +46,17 @@ node scripts/dev.mjs
 The script starts PostgreSQL, applies migrations, and launches the API and frontend. Ctrl+C stops both applications while preserving the database. If Go is not on PATH, set `GO_BIN=/absolute/path/to/go` in `backend/.env`. On macOS, install Go permanently with `brew install go`.
 
 Configuration details, themes, and tests: [frontend/README.md](frontend/README.md). Plan and checklist: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
+
+## Code review
+
+Use the project skill `$uptime-code-review` to review a commit, PR, or local diff. It runs scoped static checks before reviewing the [product architecture](.agents/skills/uptime-code-review/references/architecture.md) and [checklist](.agents/skills/uptime-code-review/references/review-checklist.md), then reports actionable findings from P0 (critical) to P3 (low).
+
+To run only the checks from the repository root:
+
+```sh
+python3 .agents/skills/uptime-code-review/scripts/static_checks.py --base origin/main --head HEAD
+# Include staged, unstaged, and untracked changes:
+python3 .agents/skills/uptime-code-review/scripts/static_checks.py --base origin/main --worktree
+```
+
+See [SKILL.md](.agents/skills/uptime-code-review/SKILL.md) for comparison modes, prerequisites, and validation limits.

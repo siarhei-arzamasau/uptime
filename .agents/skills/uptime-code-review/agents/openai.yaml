@@ -1,0 +1,4 @@
+interface:
+  display_name: "Uptime Code Review"
+  short_description: "Review Go and Next.js changes with priority findings"
+  default_prompt: "Use $uptime-code-review to run static checks and review this diff against the product architecture and checklist."
