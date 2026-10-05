@@ -51,6 +51,8 @@ Configuration details, themes, and tests: [frontend/README.md](frontend/README.m
 
 Use the project skill `$uptime-code-review` to review a commit, PR, or local diff. It runs scoped static checks before reviewing the [product architecture](.agents/skills/uptime-code-review/references/architecture.md) and [checklist](.agents/skills/uptime-code-review/references/review-checklist.md), then reports actionable findings from P0 (critical) to P3 (low).
 
+The project also includes [$vercel-react-best-practices](.agents/skills/vercel-react-best-practices/SKILL.md) for React and Next.js performance guidance, with its supporting rules kept locally. The installed source is `vercel-labs/agent-skills`, revision `063bee94c3f4df8453406c830b0a7df0f2860278`, under `skills/react-best-practices`.
+
 To run only the checks from the repository root:
 
 ```sh
