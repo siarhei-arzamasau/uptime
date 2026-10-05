@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Monitor struct {
@@ -41,4 +44,33 @@ func (s *Store) MonitorsByUser(ctx context.Context, userID uuid.UUID, after *Mon
 	// Fetch one extra row so callers can determine whether another page exists.
 	err := query.Order("created_at DESC, id DESC").Limit(MonitorPageSize + 1).Find(&monitors).Error
 	return monitors, err
+}
+
+// UpdateMonitor replaces only configuration and fills monitor with the saved row.
+// The owner predicate is part of the update; missing/foreign IDs return gorm.ErrRecordNotFound.
+// ctx controls database work; database errors propagate with context.
+func (s *Store) UpdateMonitor(ctx context.Context, monitor *Monitor) error {
+	result := s.DB.WithContext(ctx).Model(monitor).Clauses(clause.Returning{}).
+		Where("id = ? AND user_id = ?", monitor.ID, monitor.UserID).
+		Updates(map[string]any{"url": monitor.URL, "interval_seconds": monitor.IntervalSeconds})
+	if result.Error != nil {
+		return fmt.Errorf("update monitor: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// DeleteMonitor permanently removes the owner's monitor under ctx.
+// Missing/foreign IDs return gorm.ErrRecordNotFound; database errors propagate with context.
+func (s *Store) DeleteMonitor(ctx context.Context, userID, id uuid.UUID) error {
+	result := s.DB.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&Monitor{})
+	if result.Error != nil {
+		return fmt.Errorf("delete monitor: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

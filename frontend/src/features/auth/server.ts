@@ -43,7 +43,7 @@ function setTokens(res: NextResponse, pair: ReturnType<typeof tokens>, secure: b
 }
 export type AuthenticatedOperation = {
   path: string;
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PUT" | "DELETE";
   body?: string;
   decode: (data: unknown) => unknown;
   status?: number;
@@ -140,6 +140,7 @@ async function handleRequest(req: NextRequest, action?: Action, prepare?: () => 
       headers: { Authorization: `Bearer ${token}` }, body: operation?.body ?? profileBody,
     }, operation?.onError);
     async function protectedResponse(upstream: Response) {
+      if (upstream.status === 204 && operation?.method === "DELETE") return response(operation.decode(null), operation.status);
       let data: unknown;
       try { data = await upstream.json(); }
       catch { throw new APIError(502, "invalid_response", "The service returned an unexpected response. Please try again."); }

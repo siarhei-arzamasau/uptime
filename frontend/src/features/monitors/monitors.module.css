@@ -45,3 +45,12 @@
   .row { align-items: flex-start; flex-direction: column; gap: 14px; padding: 20px; }
   .frequency { padding-left: 26px; }
 }
+.danger { border: 1px solid var(--error); border-radius: 8px; padding: 11px 20px; background: var(--surface); color: var(--error); font-weight: 600; white-space: nowrap; }
+.rowControls { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+.rowControls button { padding: 8px 12px; }
+@media (max-width: 900px) {
+  .rowControls { flex-direction: column; align-items: flex-end; gap: 10px; }
+}
+@media (max-width: 650px) {
+  .rowControls { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; }
+}

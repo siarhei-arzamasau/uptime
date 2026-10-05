@@ -3,6 +3,7 @@ package monitor
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"uptime-app/backend/internal/auth"
 	"uptime-app/backend/internal/httpx"
 	"uptime-app/backend/internal/store"
@@ -18,7 +20,7 @@ import (
 
 type Controller struct{ store *store.Store }
 
-type createRequest struct {
+type monitorRequest struct {
 	URL             string `json:"url" example:"https://example.com"`
 	IntervalSeconds int    `json:"interval_seconds" minimum:"1" maximum:"2147483647" example:"60"`
 }
@@ -31,11 +33,13 @@ type listResponse struct {
 // NewController binds monitor persistence without starting checks or doing I/O.
 func NewController(s *store.Store) *Controller { return &Controller{store: s} }
 
-// RegisterRoutes mounts authenticated monitor creation and cursor-based listing.
+// RegisterRoutes mounts authenticated monitor management and cursor-based listing.
 // authenticate must supply the auth user ID; database work observes each request context.
 func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/v1/monitors", authenticate(http.HandlerFunc(c.list)))
 	mux.Handle("POST /api/v1/monitors", authenticate(http.HandlerFunc(c.create)))
+	mux.Handle("PUT /api/v1/monitors/{id}", authenticate(http.HandlerFunc(c.update)))
+	mux.Handle("DELETE /api/v1/monitors/{id}", authenticate(http.HandlerFunc(c.delete)))
 }
 
 // create derives ownership from the JWT so request fields cannot select another user.
@@ -48,7 +52,7 @@ func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.H
 // @Security BearerAuth
 // @Param Origin header string false "Allowed frontend origin; required for browser requests"
 // @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
-// @Param monitor body createRequest true "Website URL and interval in seconds"
+// @Param monitor body monitorRequest true "Website URL and interval in seconds"
 // @Success 201 {object} store.Monitor "Created monitor"
 // @Failure 400 {object} httpx.ErrorResponse "Invalid JSON, URL, or interval"
 // @Failure 401 {object} httpx.ErrorResponse "Invalid access token"
@@ -61,20 +65,8 @@ func (c *Controller) create(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 401, "unauthorized", "Please sign in to continue")
 		return
 	}
-	var body createRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024))
-	decoder.DisallowUnknownFields()
-	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" || decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF {
-		httpx.WriteError(w, 400, "invalid_request", "Provide a URL and check interval as JSON")
-		return
-	}
-	body.URL = strings.TrimSpace(body.URL)
-	if !validURL(body.URL) {
-		httpx.WriteError(w, 400, "invalid_url", "Enter an HTTP or HTTPS URL up to 2048 bytes without credentials or a fragment; use punycode for international domains")
-		return
-	}
-	if body.IntervalSeconds < 1 || body.IntervalSeconds > 2147483647 {
-		httpx.WriteError(w, 400, "invalid_interval", "Check interval must be a whole number between 1 and 2147483647 seconds")
+	body, valid := readMonitor(w, r)
+	if !valid {
 		return
 	}
 	m := store.Monitor{ID: uuid.New(), UserID: id, URL: body.URL, IntervalSeconds: body.IntervalSeconds, CreatedAt: time.Now().UTC()}
@@ -150,4 +142,124 @@ func parseCursor(value string) (*store.MonitorCursor, error) {
 		return nil, err
 	}
 	return &store.MonitorCursor{CreatedAt: created, ID: id}, nil
+}
+
+func readMonitor(w http.ResponseWriter, r *http.Request) (monitorRequest, bool) {
+	var body monitorRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024))
+	decoder.DisallowUnknownFields()
+	isJSON := strings.Split(r.Header.Get("Content-Type"), ";")[0] == "application/json"
+	if !isJSON {
+		httpx.WriteError(w, 400, "invalid_request", "Provide a URL and check interval as JSON")
+		return body, false
+	}
+	if decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF {
+		httpx.WriteError(w, 400, "invalid_request", "Provide a URL and check interval as JSON")
+		return body, false
+	}
+	body.URL = strings.TrimSpace(body.URL)
+	if !validURL(body.URL) {
+		httpx.WriteError(
+			w,
+			400,
+			"invalid_url",
+			"Enter an HTTP or HTTPS URL up to 2048 bytes without credentials or a fragment; "+
+				"use punycode for international domains",
+		)
+		return body, false
+	}
+	if body.IntervalSeconds < 1 || body.IntervalSeconds > 2147483647 {
+		httpx.WriteError(w, 400, "invalid_interval", "Check interval must be a whole number between 1 and 2147483647 seconds")
+		return body, false
+	}
+	return body, true
+}
+
+// update scopes the mutation to the authenticated owner to avoid exposing other users' records.
+// @Summary Update a website monitor
+// @ID updateMonitor
+// @Tags monitors
+// @Description Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved.
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Monitor UUID" format(uuid)
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Accept json
+// @Param monitor body monitorRequest true "Website URL and interval in seconds"
+// @Success 200 {object} store.Monitor "Updated monitor"
+// @Failure 400 {object} httpx.ErrorResponse "Invalid monitor ID or JSON, URL, interval"
+// @Failure 401 {object} httpx.ErrorResponse "Invalid access token"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 404 {object} httpx.ErrorResponse "Monitor not found"
+// @Failure 500 {object} httpx.ErrorResponse "Unable to update monitor"
+// @Router /monitors/{id} [put]
+func (c *Controller) update(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserID(r.Context())
+	if !ok {
+		httpx.WriteError(w, 401, "unauthorized", "Please sign in to continue")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, 400, "invalid_id", "Invalid monitor ID")
+		return
+	}
+	body, valid := readMonitor(w, r)
+	if !valid {
+		return
+	}
+	m := store.Monitor{ID: id, UserID: userID, URL: body.URL, IntervalSeconds: body.IntervalSeconds}
+	err = c.store.UpdateMonitor(r.Context(), &m)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		httpx.WriteError(w, 404, "monitor_not_found", "Website not found")
+		return
+	}
+	if err != nil {
+		slog.Error("monitor update failed")
+		httpx.WriteError(w, 500, "internal_error", "Unable to update the monitor")
+		return
+	}
+	httpx.WriteJSON(w, 200, m)
+}
+
+// delete scopes the mutation to the authenticated owner to avoid exposing other users' records.
+// @Summary Delete a website monitor
+// @ID deleteMonitor
+// @Tags monitors
+// @Description Permanently deletes a monitor owned by the Bearer JWT identity. Missing monitors and monitors belonging to another user both return 404.
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Monitor UUID" format(uuid)
+// @Param Origin header string false "Allowed frontend origin; required for browser requests"
+// @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
+// @Success 204 "Monitor deleted"
+// @Failure 400 {object} httpx.ErrorResponse "Invalid monitor ID"
+// @Failure 401 {object} httpx.ErrorResponse "Invalid access token"
+// @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
+// @Failure 404 {object} httpx.ErrorResponse "Monitor not found"
+// @Failure 500 {object} httpx.ErrorResponse "Unable to delete monitor"
+// @Router /monitors/{id} [delete]
+func (c *Controller) delete(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserID(r.Context())
+	if !ok {
+		httpx.WriteError(w, 401, "unauthorized", "Please sign in to continue")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, 400, "invalid_id", "Invalid monitor ID")
+		return
+	}
+	err = c.store.DeleteMonitor(r.Context(), userID, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		httpx.WriteError(w, 404, "monitor_not_found", "Website not found")
+		return
+	}
+	if err != nil {
+		slog.Error("monitor delete failed")
+		httpx.WriteError(w, 500, "internal_error", "Unable to delete the monitor")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

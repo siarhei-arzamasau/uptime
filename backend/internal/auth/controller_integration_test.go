@@ -212,7 +212,7 @@ func TestCORSAndCSRF(t *testing.T) {
 		{"POST", map[string]string{"X-CSRF-Protection": "1"}, 204},
 		{"OPTIONS", map[string]string{"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type,x-csrf-protection"}, 204},
 		{"OPTIONS", map[string]string{"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"}, 403},
-		{"OPTIONS", map[string]string{"Origin": "http://localhost:3000", "Access-Control-Request-Method": "DELETE"}, 403},
+		{"OPTIONS", map[string]string{"Origin": "http://localhost:3000", "Access-Control-Request-Method": "TRACE"}, 403},
 		{"OPTIONS", map[string]string{"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "x-untrusted"}, 403},
 	} {
 		w := request(f.handler, tc.method, "/api/v1/auth/logout", "", "", nil, tc.headers)

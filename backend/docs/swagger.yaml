@@ -92,7 +92,19 @@ components:
       required:
       - error
       type: object
-    monitor.createRequest:
+    monitor.listResponse:
+      properties:
+        monitors:
+          items:
+            $ref: '#/components/schemas/store.Monitor'
+          type: array
+          uniqueItems: false
+        next_cursor:
+          type: string
+      required:
+      - monitors
+      type: object
+    monitor.monitorRequest:
       properties:
         interval_seconds:
           example: 60
@@ -105,18 +117,6 @@ components:
       required:
       - interval_seconds
       - url
-      type: object
-    monitor.listResponse:
-      properties:
-        monitors:
-          items:
-            $ref: '#/components/schemas/store.Monitor'
-          type: array
-          uniqueItems: false
-        next_cursor:
-          type: string
-      required:
-      - monitors
       type: object
     profile.profileResponse:
       properties:
@@ -642,7 +642,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/monitor.createRequest'
+              $ref: '#/components/schemas/monitor.monitorRequest'
               description: Website URL and interval in seconds
               summary: monitor
         description: Website URL and interval in seconds
@@ -681,6 +681,145 @@ paths:
       security:
       - BearerAuth: []
       summary: Create a website monitor
+      tags:
+      - monitors
+  /monitors/{id}:
+    delete:
+      description: Permanently deletes a monitor owned by the Bearer JWT identity.
+        Missing monitors and monitors belonging to another user both return 404.
+      operationId: deleteMonitor
+      parameters:
+      - description: Monitor UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - description: Allowed frontend origin; required for browser requests
+        in: header
+        name: Origin
+        schema:
+          type: string
+      - description: Must be 1 for mutating requests without Origin
+        in: header
+        name: X-CSRF-Protection
+        schema:
+          enum:
+          - "1"
+          type: string
+      responses:
+        "204":
+          description: Monitor deleted
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Invalid monitor ID
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Invalid access token
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Origin or CSRF rejected
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Monitor not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unable to delete monitor
+      security:
+      - BearerAuth: []
+      summary: Delete a website monitor
+      tags:
+      - monitors
+    put:
+      description: Replaces URL and interval for a monitor owned by the Bearer JWT
+        identity. Uses the same URL and interval validation as creation. ID, owner
+        and creation time are preserved.
+      operationId: updateMonitor
+      parameters:
+      - description: Monitor UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - description: Allowed frontend origin; required for browser requests
+        in: header
+        name: Origin
+        schema:
+          type: string
+      - description: Must be 1 for mutating requests without Origin
+        in: header
+        name: X-CSRF-Protection
+        schema:
+          enum:
+          - "1"
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/monitor.monitorRequest'
+              description: Website URL and interval in seconds
+              summary: monitor
+        description: Website URL and interval in seconds
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/store.Monitor'
+          description: Updated monitor
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Invalid monitor ID or JSON, URL, interval
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Invalid access token
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Origin or CSRF rejected
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Monitor not found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unable to update monitor
+      security:
+      - BearerAuth: []
+      summary: Update a website monitor
       tags:
       - monitors
   /profile:

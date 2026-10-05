@@ -4,11 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Monitors } from "./monitors";
 import { AuthError } from "../auth/transport";
-import { createMonitor, loadMonitors } from "./client";
+import { createMonitor, loadMonitors, updateMonitor, deleteMonitor } from "./client";
 
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-vi.mock("./client", () => ({ loadMonitors: vi.fn(), createMonitor: vi.fn() }));
+vi.mock("./client", () => ({ loadMonitors: vi.fn(), createMonitor: vi.fn(), updateMonitor: vi.fn(), deleteMonitor: vi.fn() }));
 const monitor = { id: "monitor-id", url: "https://example.com", interval_seconds: 7, created_at: "2026-09-22" };
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(loadMonitors).mockResolvedValue({ monitors: [] }); vi.mocked(createMonitor).mockResolvedValue({ monitor }); });
 async function openForm() {
@@ -91,4 +91,90 @@ it("appends the next page and keeps existing rows when a page request fails", as
   expect(screen.getAllByRole("listitem")).toHaveLength(2);
   expect(loadMonitors).toHaveBeenLastCalledWith("page-2");
   expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+});
+
+async function existingWebsite() {
+  vi.mocked(loadMonitors).mockResolvedValue({ monitors: [monitor] });
+  const user = userEvent.setup(); render(<Monitors />);
+  await screen.findByText(monitor.url);
+  return user;
+}
+
+it("edits a saved URL and interval, and restores focus after saving", async () => {
+  const user = await existingWebsite();
+  const edit = screen.getByRole("button", { name: `Edit ${monitor.url}` });
+  await user.click(edit);
+  expect(screen.getByLabelText("Website URL")).toHaveValue(monitor.url);
+  expect(screen.getByRole("spinbutton")).toHaveValue(7);
+  expect(screen.getByLabelText("Interval unit")).toHaveValue("1");
+  await user.clear(screen.getByLabelText("Website URL"));
+  await user.type(screen.getByLabelText("Website URL"), "https://changed.example");
+  fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "10" } });
+  await user.selectOptions(screen.getByLabelText("Interval unit"), "60");
+  vi.mocked(updateMonitor).mockResolvedValue({ monitor: { ...monitor, url: "https://changed.example", interval_seconds: 600 } });
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(updateMonitor).toHaveBeenCalledWith(monitor.id, { url: "https://changed.example", interval_seconds: 600 });
+  expect(await screen.findByText("Every 10 minutes")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Edit https://changed.example" })).toHaveFocus();
+  expect(createMonitor).not.toHaveBeenCalled();
+});
+
+it("retains the edit draft after failure and cancels without changing the list", async () => {
+  const user = await existingWebsite();
+  await user.click(screen.getByRole("button", { name: `Edit ${monitor.url}` }));
+  vi.mocked(updateMonitor).mockRejectedValue(new Error("Service unavailable"));
+  fireEvent.change(screen.getByLabelText("Website URL"), { target: { value: "https://draft.example" } });
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Service unavailable");
+  expect(screen.getByLabelText("Website URL")).toHaveValue("https://draft.example");
+  expect(screen.getByText(monitor.url)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: `Edit ${monitor.url}` })).toHaveFocus();
+});
+
+it("requires deletion confirmation, preserves rows on failure and blocks duplicate requests", async () => {
+  const user = await existingWebsite();
+  const remove = screen.getByRole("button", { name: `Delete ${monitor.url}` });
+  await user.click(remove);
+  expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(deleteMonitor).not.toHaveBeenCalled(); expect(remove).toHaveFocus();
+  await user.click(remove);
+  let reject!: (error: Error) => void;
+  vi.mocked(deleteMonitor).mockReturnValueOnce(new Promise((_, no) => { reject = no; }));
+  await user.click(screen.getByRole("button", { name: "Delete website" }));
+  expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  await act(async () => reject(new Error("Service unavailable")));
+  expect(screen.getByRole("alert")).toHaveTextContent("Service unavailable");
+  vi.mocked(deleteMonitor).mockResolvedValue({ ok: true });
+  await user.click(screen.getByRole("button", { name: "Delete website" }));
+  expect(await screen.findByText("No websites yet")).toBeVisible();
+  expect(screen.getByRole("status")).toHaveTextContent("Website deleted");
+  expect(screen.getByRole("button", { name: "Add website" })).toHaveFocus();
+  expect(deleteMonitor).toHaveBeenCalledTimes(2);
+});
+
+it.each(["edit", "delete"])("redirects when the session expires during %s", async action => {
+  const user = await existingWebsite();
+  vi.mocked(updateMonitor).mockRejectedValue(new AuthError("Session ended", 401));
+  vi.mocked(deleteMonitor).mockRejectedValue(new AuthError("Session ended", 401));
+  await user.click(screen.getByRole("button", { name: `${action === "edit" ? "Edit" : "Delete"} ${monitor.url}` }));
+  await user.click(screen.getByRole("button", { name: action === "edit" ? "Save changes" : "Delete website" }));
+  expect(router.replace).toHaveBeenCalledWith("/login");
+  expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+});
+
+it("keeps pagination available after deleting all loaded rows", async () => {
+  vi.mocked(loadMonitors).mockResolvedValueOnce({ monitors: [monitor], next_cursor: "next-page" })
+    .mockResolvedValueOnce({ monitors: [{ ...monitor, id: "next-id", url: "https://next.example" }] });
+  vi.mocked(deleteMonitor).mockResolvedValue({ ok: true });
+  const user = userEvent.setup(); render(<Monitors />);
+  await user.click(await screen.findByRole("button", { name: `Delete ${monitor.url}` }));
+  await user.click(screen.getByRole("button", { name: "Delete website" }));
+  expect(await screen.findByText("Load more to see the remaining websites.")).toBeVisible();
+  expect(screen.queryByText("No websites yet")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(await screen.findByText("https://next.example")).toBeVisible();
+  expect(loadMonitors).toHaveBeenLastCalledWith("next-page");
 });

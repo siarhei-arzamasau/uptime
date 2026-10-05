@@ -150,3 +150,77 @@ func TestMonitorPagination(t *testing.T) {
 		checkStatus(t, request(f.handler, "GET", "/api/v1/monitors?cursor="+invalid, "", owner.Access, nil, nil), 400)
 	}
 }
+
+func TestMonitorUpdateAndDeleteOwnership(t *testing.T) {
+	f := setup(t)
+	owner := f.register(t, "edit-owner@example.com")
+	other := f.register(t, "edit-other@example.com")
+	headers := map[string]string{"X-CSRF-Protection": "1"}
+	created := request(f.handler, "POST", "/api/v1/monitors", `{"url":"https://example.com","interval_seconds":7}`, owner.Access, nil, headers)
+	checkStatus(t, created, 201)
+	var original store.Monitor
+	if err := json.Unmarshal(created.Body.Bytes(), &original); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/monitors/" + original.ID.String()
+	body := `{"url":"  https://changed.example/health  ","interval_seconds":600}`
+	for _, method := range []string{"PUT", "DELETE"} {
+		t.Run(method, func(t *testing.T) {
+			checkStatus(t, request(f.handler, method, path, body, "", nil, headers), 401)
+			checkStatus(t, request(f.handler, method, path, body, owner.Access, nil, nil), 403)
+			checkStatus(t, request(f.handler, method, path, body, owner.Access, nil, map[string]string{"Origin": "https://evil.example"}), 403)
+			checkStatus(t, request(f.handler, method, path, body, other.Access, nil, headers), 404)
+			checkStatus(t, request(f.handler, method, "/api/v1/monitors/"+uuid.NewString(), body, owner.Access, nil, headers), 404)
+			checkStatus(t, request(f.handler, method, "/api/v1/monitors/bad-id", body, owner.Access, nil, headers), 400)
+		})
+	}
+	for _, invalid := range []string{
+		`{}`, `null`, `[]`, `{"url":"ftp://example.com","interval_seconds":7}`,
+		`{"url":"https://example.com","interval_seconds":0}`,
+		`{"url":"https://example.com","interval_seconds":1.5}`,
+		`{"url":"https://example.com","interval_seconds":2147483648}`,
+		`{"url":"https://example.com","interval_seconds":7,"user_id":"other"}`,
+		body + `{}`, `{"url":"` + strings.Repeat("a", 17000) + `","interval_seconds":7}`,
+	} {
+		checkStatus(t, request(f.handler, "PUT", path, invalid, owner.Access, nil, headers), 400)
+	}
+	checkStatus(t, request(f.handler, "PUT", path, body, owner.Access, nil, map[string]string{"X-CSRF-Protection": "1", "Content-Type": "text/plain"}), 400)
+	rows, err := f.s.MonitorsByUser(context.Background(), owner.User.ID, nil)
+	if err != nil || len(rows) != 1 || rows[0].URL != original.URL || rows[0].IntervalSeconds != 7 {
+		t.Fatalf("rejected mutations changed row: %+v, %v", rows, err)
+	}
+	updated := request(f.handler, "PUT", path, body, owner.Access, nil, headers)
+	checkStatus(t, updated, 200)
+	var saved store.Monitor
+	if err := json.Unmarshal(updated.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.ID != original.ID || !saved.CreatedAt.Equal(original.CreatedAt) || saved.URL != "https://changed.example/health" || saved.IntervalSeconds != 600 {
+		t.Fatalf("unexpected update: %+v", saved)
+	}
+	if strings.Contains(updated.Body.String(), "user_id") {
+		t.Fatal("owner leaked")
+	}
+	reopened, err := store.Open(context.Background(), f.dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	rows, err = reopened.MonitorsByUser(context.Background(), owner.User.ID, nil)
+	if err != nil || len(rows) != 1 || rows[0].URL != saved.URL || rows[0].IntervalSeconds != 600 {
+		t.Fatalf("update not persisted: %+v, %v", rows, err)
+	}
+	// Saving identical settings must still succeed.
+	checkStatus(t, request(f.handler, "PUT", path, body, owner.Access, nil, headers), 200)
+	deleted := request(f.handler, "DELETE", path, "", owner.Access, nil, headers)
+	checkStatus(t, deleted, 204)
+	if deleted.Body.Len() != 0 {
+		t.Fatal("204 must have no body")
+	}
+	rows, err = reopened.MonitorsByUser(context.Background(), owner.User.ID, nil)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("delete not persisted: %+v, %v", rows, err)
+	}
+	checkStatus(t, request(f.handler, "DELETE", path, "", owner.Access, nil, headers), 404)
+	checkStatus(t, request(f.handler, "PUT", path, body, owner.Access, nil, headers), 404)
+}
