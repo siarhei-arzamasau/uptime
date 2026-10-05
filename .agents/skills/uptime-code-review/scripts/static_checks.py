@@ -152,7 +152,7 @@ class Runner:
                         line_number += 1
                     elif line.startswith(" "):
                         line_number += 1
-                if "Binary files " in patch:
+                if any(line.startswith("Binary files ") and line.endswith(" differ") for line in patch.splitlines()):
                     self.report("SKIP", "credential scan", f"{name!r}: binary; inspect separately")
                 lines = added
             for number, line in lines:

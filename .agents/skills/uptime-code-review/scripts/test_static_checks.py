@@ -185,6 +185,13 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("credential literal", report)
         self.assertNotIn(credential, report)
 
+    def test_binary_marker_inside_source_is_not_reported_as_binary(self):
+        self.write("backend/text.go", 'package backend\nvar marker = "Binary files differ"\n')
+        self.commit()
+        code, report = self.run_checks()
+        self.assertEqual(code, 0, report)
+        self.assertNotIn("binary; inspect separately", report)
+
     def test_placeholder_does_not_trigger_secret_candidate(self):
         self.write("backend/.env.example", 'JWT_SECRET="replace-this-with-a-random-secret"\n')
         self.commit()
