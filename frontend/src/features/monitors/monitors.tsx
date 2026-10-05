@@ -4,14 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthError } from "../auth/transport";
 import { loadMonitors } from "./client";
-import { CreateMonitorForm } from "./create-monitor-form";
+import { MonitorForm } from "./monitor-form";
+import { DeleteMonitorConfirmation } from "./delete-monitor-confirmation";
 import { MonitorList } from "./monitor-list";
 import type { Monitor } from "./types";
 import styles from "./monitors.module.css";
 
 /**
- * Renders monitor creation and cursor pagination with separate load/save error recovery.
- * A confirmed 401 redirects to login; successful creation prepends the saved monitor.
+ * Renders monitor management and cursor pagination with separate load/save error recovery.
+ * A confirmed 401 redirects to login; successful mutations update the list after the server confirms them.
  */
 export function Monitors() {
   const router = useRouter();
@@ -20,6 +21,8 @@ export function Monitors() {
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<{ action: "edit" | "delete"; monitor: Monitor }>();
+  const actionButton = useRef<HTMLButtonElement | null>(null);
   const [saved, setSaved] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [pageError, setPageError] = useState("");
@@ -42,11 +45,14 @@ export function Monitors() {
   }, [attempt, router]);
 
   useEffect(() => {
-    if (!open && restoreFocus.current) { addButton.current?.focus(); restoreFocus.current = false; }
-  }, [open]);
+    if (!open && !selected && restoreFocus.current) {
+      const button = actionButton.current?.isConnected ? actionButton.current : addButton.current;
+      button?.focus(); restoreFocus.current = false; actionButton.current = null;
+    }
+  }, [open, selected]);
 
-  function closeForm() { restoreFocus.current = true; setOpen(false); }
-  function unauthorized() { setMonitors(undefined); router.replace("/login"); }
+  function closeForm() { restoreFocus.current = true; setOpen(false); setSelected(undefined); }
+  function unauthorized() { setOpen(false); setSelected(undefined); setMonitors(undefined); router.replace("/login"); }
 
   async function loadMore() {
     if (!cursor || paging.current) return;
@@ -73,16 +79,36 @@ export function Monitors() {
   return <section aria-label="Website monitors" className={styles.monitors}>
     <div className={styles.toolbar}>
       <p className={styles.intro}>Save your websites and choose how often to check them.</p>
-      <button ref={addButton} className={styles.primary} aria-expanded={open} aria-controls="create-monitor" disabled={!monitors || open} onClick={() => { setSaved(""); setOpen(true); }}>Add website</button>
+      <button ref={addButton} className={styles.primary} aria-expanded={open} aria-controls="monitor-form" disabled={!monitors || open || !!selected} onClick={() => { setSaved(""); setOpen(true); }}>Add website</button>
     </div>
     {loadError ? <div role="alert" className={styles.alert}>{loadError} <button className={styles.secondary} onClick={() => { setLoadError(""); setAttempt(value => value + 1); }}>Try again</button></div> : !monitors ? <p role="status">Loading websites…</p> : null}
     {saved && <p role="status" className={styles.success}>{saved}</p>}
-    {open && <CreateMonitorForm onCancel={closeForm} onUnauthorized={unauthorized} onCreated={monitor => {
+    {open && <MonitorForm onCancel={closeForm} onUnauthorized={unauthorized} onSaved={monitor => {
       setMonitors(current => [monitor, ...(current ?? [])]);
       closeForm(); setSaved("Website added. Checks have not started yet.");
     }} />}
-    {monitors && (monitors.length ? <MonitorList monitors={monitors} /> : !open ? <div className={styles.empty}><span className={styles.emptyMark} aria-hidden="true">—</span><h2>No websites yet</h2><p>Add your first website to set up a monitor.</p></div> : null)}
+    {selected?.action === "edit" && <MonitorForm key={selected.monitor.id} monitor={selected.monitor} onCancel={closeForm} onUnauthorized={unauthorized} onSaved={monitor => {
+      setMonitors(current => current?.map(existing => existing.id === monitor.id ? monitor : existing));
+      closeForm(); setSaved("Website updated.");
+    }} />}
+    {selected?.action === "delete" && <DeleteMonitorConfirmation monitor={selected.monitor} onCancel={closeForm} onUnauthorized={unauthorized} onDeleted={() => {
+      setMonitors(current => current?.filter(monitor => monitor.id !== selected.monitor.id));
+      closeForm(); setSaved("Website deleted.");
+    }} />}
+    {monitors && (monitors.length ? <MonitorList
+      monitors={monitors}
+      disabled={open || !!selected || loadingMore}
+      onEdit={(monitor, button) => {
+        actionButton.current = button; setSaved(""); setSelected({ action: "edit", monitor });
+      }}
+      onDelete={(monitor, button) => {
+        actionButton.current = button; setSaved(""); setSelected({ action: "delete", monitor });
+      }}
+    /> : !open && cursor ? <p className={styles.intro}>Load more to see the remaining websites.</p> : !open ? <div className={styles.empty}>
+      <span className={styles.emptyMark} aria-hidden="true">—</span>
+      <h2>No websites yet</h2><p>Add your first website to set up a monitor.</p>
+    </div> : null)}
     {pageError && <p role="alert" className={styles.alert}>{pageError}</p>}
-    {cursor && <button className={styles.secondary} disabled={loadingMore} onClick={loadMore}>{loadingMore ? "Loading…" : "Load more"}</button>}
+    {cursor && <button className={styles.secondary} disabled={loadingMore || !!selected} onClick={loadMore}>{loadingMore ? "Loading…" : "Load more"}</button>}
   </section>;
 }

@@ -23,25 +23,33 @@ function page(value: unknown): MonitorPage {
 }
 function onError(status: number) {
   if (status === 400) return new APIError(400, "invalid_monitor", "Enter a valid HTTP or HTTPS URL, interval or page cursor.");
+  if (status === 404) return new APIError(404, "monitor_not_found", "Website not found. It may have been deleted. Reload the list to continue.");
   if (status === 413) return new APIError(413, "request_too_large", "Request is too large.");
 }
 /**
- * Returns a validated monitor page or newly created monitor through the shared auth BFF.
+ * Returns a validated monitor page, saved monitor, or deletion acknowledgement through the shared auth BFF.
  * Invalid input/cursors, session failures, and upstream failures become HTTP error responses;
  * cookie recovery and upstream timeouts follow handleAuthenticated.
  */
-export function handleMonitors(req: NextRequest, action: "list" | "create") {
+export function handleMonitors(req: NextRequest, action: "list" | "create" | "update" | "delete", id?: string) {
   return handleAuthenticated(req, async () => {
     if (action === "list") {
       const cursor = req.nextUrl.searchParams.get("cursor");
       if (cursor && (cursor.length > 128 || !/^[A-Za-z0-9_-]+$/.test(cursor))) throw new APIError(400, "invalid_cursor", "Invalid page cursor.");
       return { path: `monitors${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, method: "GET", decode: page, onError };
     }
+    if (action === "update" || action === "delete") {
+      if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new APIError(400, "invalid_id", "Invalid website ID.");
+    }
+    if (action === "delete") return {
+      path: `monitors/${id}`, method: "DELETE", onError,
+      decode: data => { if (data !== null) throw invalidResponse(); return { ok: true }; },
+    };
     const body = await readJSON(req, 16 * 1024);
     if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 2 || !("url" in body) || typeof body.url !== "string" || !("interval_seconds" in body) || typeof body.interval_seconds !== "number") throw new APIError(400, "invalid_request", "Provide only a URL and check interval.");
     const url = body.url.trim(), interval = body.interval_seconds;
     if (!validMonitorURL(url)) throw new APIError(400, "invalid_url", "Enter a valid HTTP or HTTPS URL without credentials or a fragment; use punycode for international domains.");
     if (!Number.isInteger(interval) || interval < 1 || interval > MAX_INTERVAL_SECONDS) throw new APIError(400, "invalid_interval", "Enter a positive whole-number interval up to 2147483647 seconds.");
-    return { path: "monitors", method: "POST", body: JSON.stringify({ url, interval_seconds: interval }), decode: data => ({ monitor: monitor(data) }), status: 201, onError };
+    return { path: action === "update" ? `monitors/${id}` : "monitors", method: action === "update" ? "PUT" : "POST", body: JSON.stringify({ url, interval_seconds: interval }), decode: data => ({ monitor: monitor(data) }), status: action === "update" ? 200 : 201, onError };
   });
 }

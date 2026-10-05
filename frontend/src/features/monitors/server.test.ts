@@ -89,3 +89,39 @@ it("retains rotated cookies when a monitor response is malformed", async () => {
   expect(response.status).toBe(502);
   expect(response.cookies.get("uptime_refresh")?.value).toBe("new-refresh");
 });
+
+const id = "926ccbea-9c77-4b0b-99da-28b94ae35f30";
+it("updates only public configuration and acknowledges a bodyless deletion", async () => {
+  fetchMock.mockResolvedValueOnce(Response.json({ ...monitor, id, user_id: "private" }));
+  const updated = await handleMonitors(req(input), "update", id);
+  expect(updated.status).toBe(200); expect(await updated.json()).toEqual({ monitor: { ...monitor, id } });
+  expect(fetchMock).toHaveBeenLastCalledWith(`http://127.0.0.1:8080/api/v1/monitors/${id}`, expect.objectContaining({ method: "PUT", body: JSON.stringify(input) }));
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+  const deleted = await handleMonitors(req(), "delete", id);
+  expect(deleted.status).toBe(200); expect(await deleted.json()).toEqual({ ok: true });
+  expect(fetchMock).toHaveBeenLastCalledWith(`http://127.0.0.1:8080/api/v1/monitors/${id}`, expect.objectContaining({ method: "DELETE", body: undefined }));
+});
+it.each(["update", "delete"] as const)("validates %s IDs and maps missing/foreign rows", async action => {
+  expect((await handleMonitors(req(input), action, "../auth/logout")).status).toBe(400);
+  expect(fetchMock).not.toHaveBeenCalled();
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+  const result = await handleMonitors(req(input), action, id);
+  expect(result.status).toBe(404); expect(await result.json()).toMatchObject({ error: { code: "monitor_not_found" } });
+});
+it("validates update settings before contacting Go", async () => {
+  expect((await handleMonitors(req({ ...input, interval_seconds: 0 }), "update", id)).status).toBe(400);
+  expect((await handleMonitors(req({ ...input, user_id: "other" }), "update", id)).status).toBe(400);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it("rotates cookies during deletion and preserves them on a 404", async () => {
+  const expires = new Date(Date.now() + 86400000).toUTCString();
+  fetchMock.mockResolvedValueOnce(Response.json({ access_token: "new-access", token_type: "Bearer", expires_in: 900 }, { headers: { "Set-Cookie": `refresh_token=new-refresh; Expires=${expires}; HttpOnly` } }))
+    .mockResolvedValueOnce(new Response(null, { status: 404 }));
+  const result = await handleMonitors(req(undefined, "uptime_refresh=valid"), "delete", id);
+  expect(result.status).toBe(404); expect(result.cookies.get("uptime_refresh")?.value).toBe("new-refresh");
+});
+it.each(["update", "delete"] as const)("does not retry an uncertain %s", async action => {
+  fetchMock.mockRejectedValueOnce(new Error("network"));
+  expect((await handleMonitors(req(input), action, id)).status).toBe(503);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
