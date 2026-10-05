@@ -26,6 +26,10 @@ SECRET_PATTERNS = (
         r"\b(?:JWT_SECRET|POSTGRES_PASSWORD|API_KEY|CLIENT_SECRET|ACCESS_TOKEN|REFRESH_TOKEN)"
         r"[\"']?\s*[:=]\s*[\"']?([^\"'\s,;)}]{16,})", re.IGNORECASE)),
 )
+# Failed tools may truncate PEM output before END; redact the remainder too.
+PRIVATE_KEY_BLOCK = re.compile(
+    r"-----BEGIN (?P<label>(?:[A-Z0-9]+ )*PRIVATE KEY)-----.*?"
+    r"(?:-----END (?P=label)-----|\Z)", re.DOTALL)
 PLACEHOLDER = re.compile(r"(?:example|placeholder|change[-_]?me|replace[-_]|your[-_]|\$\{|<|test[-_]password)", re.IGNORECASE)
 # Keep ordinary toolchain configuration, but do not forward deployment credentials.
 ENV_KEYS = {"PATH", "HOME", "USER", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL",
@@ -83,6 +87,7 @@ def select_projects(changed):
 
 def redact(output):
     """Remove recognized credential values from diagnostic output."""
+    output = PRIVATE_KEY_BLOCK.sub("[redacted private key]", output)
     for _, pattern in SECRET_PATTERNS:
         output = pattern.sub("[redacted credential candidate]", output)
     return output

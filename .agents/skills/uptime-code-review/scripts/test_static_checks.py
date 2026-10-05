@@ -1,5 +1,6 @@
 """Exercise review-runner behavior against disposable Git repositories/tools."""
 
+import argparse
 import contextlib
 import io
 import json
@@ -230,6 +231,38 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("PLAN: Next.js route types", report)
         self.assertIn("PLAN: TypeScript", report)
         self.assertFalse(self.commands())
+
+    def test_tool_diagnostics_redact_entire_private_key_blocks(self):
+        for label in ("PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY", "DSA PRIVATE KEY", "OPENSSH PRIVATE KEY", "ENCRYPTED PRIVATE KEY"):
+            with self.subTest(label=label):
+                header = "-----BEGIN " + label + "-----"
+                footer = "-----END " + label + "-----"
+                key_body = "synthetic-sensitive-line-one\nsynthetic-sensitive-line-two"
+                diagnostic = "before\n" + header + "\n" + key_body + "\n" + footer + "\nafter"
+                tool = self.bin / "emit-key"
+                tool.write_text(f"#!{os.sys.executable}\nimport sys\nprint({diagnostic!r})\nsys.exit(1)\n")
+                tool.chmod(0o755)
+                runner = static_checks.Runner(argparse.Namespace(dry_run=False, timeout=5), self.repo)
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertFalse(runner.check("fixture diagnostic", [str(tool)], self.repo))
+                report = output.getvalue()
+                self.assertNotIn(header, report)
+                self.assertNotIn(footer, report)
+                for line in key_body.splitlines():
+                    self.assertNotIn(line, report)
+                self.assertIn("[redacted private key]", report)
+                self.assertIn("before", report)
+                self.assertIn("after", report)
+
+    def test_truncated_private_key_body_is_also_redacted(self):
+        header = "-----BEGIN " + "PRIVATE KEY-----"
+        key_body = "synthetic-sensitive-line"
+        output = static_checks.redact("before\n" + header + "\n" + key_body)
+        self.assertNotIn(header, output)
+        self.assertNotIn(key_body, output)
+        self.assertIn("before", output)
+        self.assertIn("[redacted private key]", output)
 
     def test_placeholder_does_not_trigger_secret_candidate(self):
         self.write("backend/.env.example", 'JWT_SECRET="replace-this-with-a-random-secret"\n')
