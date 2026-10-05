@@ -100,7 +100,8 @@ class Runner:
         self.args, self.repo = args, repo
         self.failed = self.incomplete = False
         self.env = {key: value for key, value in os.environ.items() if key in ENV_KEYS}
-        self.env.update(CI="1", NEXT_TELEMETRY_DISABLED="1", GOFLAGS="-mod=readonly")
+        # Module-local checks must not discover an unrelated parent Go workspace.
+        self.env.update(CI="1", NEXT_TELEMETRY_DISABLED="1", GOFLAGS="-mod=readonly", GOWORK="off")
 
     def report(self, state, name, detail=""):
         """Print a check outcome; failures take precedence over incomplete checks."""

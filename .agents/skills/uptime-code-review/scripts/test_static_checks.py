@@ -170,6 +170,26 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 1, report)
         self.assertIn("FAIL: index diff whitespace", report)
 
+    def test_untracked_root_workspace_does_not_affect_go_checks(self):
+        self.write("backend/changed.go", "package backend\n")
+        self.commit()
+        workspace = self.write("go.work", "invalid unrelated workspace\n")
+        go = self.bin / "go"
+        go.write_text(f"#!{os.sys.executable}\n" +
+            "import os, pathlib, sys\n" +
+            "workspace = pathlib.Path.cwd().parent / 'go.work'\n" +
+            "if workspace.exists() and os.environ.get('GOWORK') != 'off':\n" +
+            "    print('fixture workspace contaminated Go checks')\n" +
+            "    sys.exit(1)\n")
+        go.chmod(0o755)
+        with patch.dict(os.environ, {"GOWORK": str(workspace)}):
+            code, report = self.run_checks()
+        self.assertEqual(code, 0, report)
+        self.assertIn("PASS: Go vet", report)
+        self.assertIn("PASS: Go API build", report)
+        self.assertIn("PASS: OpenAPI freshness/route coverage", report)
+        self.assertEqual(workspace.read_text(), "invalid unrelated workspace\n")
+
     def test_missing_dependencies_are_incomplete(self):
         self.write("frontend/local.ts", "export const value = 1;\n")
         self.commit()
