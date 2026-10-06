@@ -87,7 +87,7 @@ func (c *Controller) create(w http.ResponseWriter, r *http.Request) {
 // @Summary List website monitors
 // @ID listMonitors
 // @Tags monitors
-// @Description Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null. Includes optional PNG favicon data URIs, cached for up to one hour. Favicon discovery is best-effort, limited to public HTTP/HTTPS on standard ports, with a shared three-second deadline; failures omit favicon.
+// @Description Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null. Includes optional PNG favicon data URIs, cached for up to one hour. Favicon discovery is best-effort, limited to public HTTP/HTTPS on standard ports, with a shared three-second request deadline and a one-second budget per URL; concurrent requests for the same URL share discovery, and failures omit favicon.
 // @Produce json
 // @Security BearerAuth
 // @Param cursor query string false "Opaque next_cursor from the preceding page" maxLength(128)

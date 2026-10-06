@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image/png"
 	"io"
@@ -21,6 +22,7 @@ import (
 )
 
 const faviconLimit = 64 * 1024
+const faviconFetchTimeout = time.Second
 
 type monitorResponse struct {
 	store.Monitor
@@ -33,9 +35,10 @@ type faviconEntry struct {
 }
 
 type faviconCall struct {
-	done  chan struct{}
-	image string
-	retry bool
+	done     chan struct{}
+	image    string
+	retry    bool
+	timedOut bool
 }
 
 type faviconFetcher struct {
@@ -92,6 +95,9 @@ type publicDialer struct {
 }
 
 func dialPublic(ctx context.Context, network, address string) (net.Conn, error) {
+	// The HTTP transport can detach connection attempts from the requesting context.
+	ctx, cancel := context.WithTimeout(ctx, faviconFetchTimeout)
+	defer cancel()
 	var dialer net.Dialer
 	return (publicDialer{
 		lookup: net.DefaultResolver.LookupNetIP,
@@ -317,7 +323,11 @@ func (f *faviconFetcher) get(ctx context.Context, rawURL string) string {
 
 		select {
 		case f.slots <- struct{}{}:
-			image := f.fetch(ctx, rawURL)
+			// Each admitted URL gets a smaller budget than the list, allowing later entries to run.
+			fetchCtx, cancel := context.WithTimeout(ctx, faviconFetchTimeout)
+			image := f.fetch(fetchCtx, rawURL)
+			call.timedOut = errors.Is(fetchCtx.Err(), context.DeadlineExceeded)
+			cancel()
 			<-f.slots
 			f.complete(ctx, rawURL, call, image)
 			return image
@@ -343,6 +353,10 @@ func (f *faviconFetcher) complete(ctx context.Context, rawURL string, call *favi
 		ttl := time.Hour
 		if image == "" {
 			ttl = 5 * time.Minute
+		}
+		if call.timedOut {
+			// Briefly skip slow sites so they cannot repeatedly monopolize the list's workers.
+			ttl = 30 * time.Second
 		}
 		f.cache[rawURL] = faviconEntry{image: image, expires: time.Now().Add(ttl)}
 	}

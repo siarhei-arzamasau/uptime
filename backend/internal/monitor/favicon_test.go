@@ -426,3 +426,45 @@ func TestFaviconLiveWaiterRetriesCanceledLeader(t *testing.T) {
 		}
 	})
 }
+
+func TestSlowFaviconsDoNotStarveLaterSites(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newFaviconFetcher()
+		data := testPNG(t)
+		var slowRequests atomic.Int32
+		f.client.Transport = iconTransport(func(r *http.Request) (*http.Response, error) {
+			if strings.HasPrefix(r.URL.Host, "slow") {
+				slowRequests.Add(1)
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			}
+			body := data
+			if r.URL.Path == "/" {
+				body = []byte(`<link rel="icon" href="/icon.png">`)
+			}
+			return &http.Response{StatusCode: 200, Request: r, Body: io.NopCloser(bytes.NewReader(body))}, nil
+		})
+		rows := make([]store.Monitor, 9)
+		for i := range 8 {
+			rows[i].URL = fmt.Sprintf("https://slow%d.example/", i)
+		}
+		rows[8].URL = "https://healthy.example/"
+		c := &Controller{favicons: f}
+		for range 2 {
+			if result := c.withFavicons(context.Background(), rows); result[8].Favicon != pngData(data) {
+				t.Fatal("healthy site starved")
+			}
+		}
+		if got := slowRequests.Load(); got != 8 {
+			t.Fatalf("timed-out sites retried during backoff: %d", got)
+		}
+		if len(f.slots) != 0 {
+			t.Fatal("discovery slots leaked")
+		}
+		time.Sleep(31 * time.Second)
+		c.withFavicons(context.Background(), rows)
+		if got := slowRequests.Load(); got != 16 {
+			t.Fatalf("timeout backoff did not expire: %d", got)
+		}
+	})
+}
