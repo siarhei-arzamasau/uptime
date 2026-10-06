@@ -65,3 +65,11 @@ This follow-up changes documentation and evidence only. The previously passed au
 ## Rollout
 
 Apply version 5 during a coordinated update of the API (old writers do not create schedules and can submit intervals below 5), then start worker and frontend. Existing monitors become due immediately. Watch schedule lag, active/completed counts, stale statuses, and database/cleanup errors. This task validates migration code only; applying it to a persistent deployment requires its normal backup and target checks. Reverting the migration deletes monitoring history.
+
+## Review fixes — 2026-10-06
+
+Commit `c04ed55` fixes both P2 review findings: creation returns the committed initial pending status without a post-commit database read, and failed claim transactions expose no dispatchable jobs. Worker dispatch also rejects populated batches accompanied by errors. Three regression tests reproduced the failures before the fix and passed afterward, including a deferred PostgreSQL trigger that rejects commit after rows have been scanned. Full backend tests with PostgreSQL, race, vet, API/worker builds and OpenAPI freshness passed; generated contracts were updated.
+
+The follow-up Playwright MCP check passed on the fixed commit in the same dedicated E2E environment described above. Creating one monitor returned HTTP 201 with version 1, pending status and null result fields; polling then displayed Working / HTTP 200 from a real GET. Reload retained exactly one monitor. Desktop 1440×900 and mobile 390×844 screenshots were inspected, with no overflow or layout regression. The monitor was deleted through the UI and the account signed out. All monitoring requests succeeded; console inspection found only the existing favicon 404 and the expected session 401 after sign-out, with no JavaScript errors. This completes the browser verification that was unavailable in the separate automated review session. Frontend source and styling were unchanged, so the earlier full frontend and theme validation remains applicable.
+
+Evidence: [desktop](images/monitoring/review-fix-desktop.png), [mobile](images/monitoring/review-fix-mobile.png).
