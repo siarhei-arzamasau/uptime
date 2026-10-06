@@ -151,3 +151,50 @@ func TestWorkerBoundsConcurrencyAndCancels(t *testing.T) {
 		}
 	})
 }
+
+type failingClaimChecks struct {
+	memoryChecks
+	claims atomic.Int64
+}
+
+func (s *failingClaimChecks) ClaimChecks(ctx context.Context, limit int) ([]store.CheckJob, error) {
+	if s.claims.Add(1) == 1 {
+		return append([]store.CheckJob{}, s.jobs...), errors.New("claim commit failed")
+	}
+	return s.memoryChecks.ClaimChecks(ctx, limit)
+}
+
+func TestWorkerDiscardsFailedClaimBatchAndRetries(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		worker, err := NewWorker(nil, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		persistence := &failingClaimChecks{memoryChecks: memoryChecks{jobs: []store.CheckJob{
+			{JobID: uuid.New(), URL: "https://example.com", ScheduledAt: time.Now()},
+		}}}
+		worker.store = persistence
+		var requests atomic.Int64
+		worker.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			requests.Add(1)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+		})
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { worker.Run(ctx); close(done) }()
+		synctest.Wait()
+		if requests.Load() != 0 || persistence.saved.Load() != 0 || worker.active.Load() != 0 {
+			t.Error("failed claim dispatched an unleased check")
+		}
+		time.Sleep(500 * time.Millisecond)
+		synctest.Wait()
+		cancel()
+		<-done
+		if persistence.claims.Load() != 2 || requests.Load() != 1 || persistence.saved.Load() != 1 {
+			t.Fatal("claim failure did not retry once at the normal polling interval")
+		}
+		if worker.active.Load() != 0 || persistence.released.Load() != 0 {
+			t.Fatal("failed claim changed lease cleanup or leaked work")
+		}
+	})
+}

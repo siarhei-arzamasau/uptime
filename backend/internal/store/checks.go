@@ -54,7 +54,8 @@ type CheckResult struct {
 }
 
 // ClaimChecks atomically leases at most limit due checks for 30 seconds under ctx.
-// HTTP I/O must happen after this method returns; database errors roll back the batch.
+// HTTP I/O must happen after a successful return; database errors discard the batch,
+// including scanned jobs whose lease transaction failed to commit.
 func (s *Store) ClaimChecks(ctx context.Context, limit int) ([]CheckJob, error) {
 	jobs := make([]CheckJob, 0)
 	if limit <= 0 {
@@ -73,7 +74,10 @@ func (s *Store) ClaimChecks(ctx context.Context, limit int) ([]CheckJob, error) 
    SELECT c.monitor_id, m.url, m.interval_seconds, c.version, c.job_id, c.next_check_at AS scheduled_at
    FROM claimed c JOIN monitors m ON m.id = c.monitor_id`, limit).Scan(&jobs).Error
 	})
-	return jobs, err
+	if err != nil {
+		return nil, err
+	}
+	return jobs, nil
 }
 
 // NextCheck returns the first scheduled slot strictly after finished, skipping missed slots.

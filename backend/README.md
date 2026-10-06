@@ -12,6 +12,8 @@ Go API for authentication, profiles, and website monitors: PostgreSQL 17, GORM, 
 
 Place new controllers inside their owning modules and expose `RegisterRoutes`.
 
+New-monitor creation returns HTTP 201 with the initial pending check snapshot after the monitor and schedule commit. It does not query current status afterward; subsequent status polling reads worker observations. A failed claim query or commit yields no dispatchable jobs, and the worker retries at its normal polling interval.
+
 ## Website favicons
 
 Monitor list/create/update responses include optional `favicon` PNG data URIs. Discovery reads the page's icon links (including Apple touch icons), then tries `/favicon.png` and `/favicon.ico`; only actual PNG content is accepted. ICO/SVG-only sites use the frontend fallback. PNG input/output is limited to 64 KiB and dimensions to 256 × 256; images are decoded and re-encoded before returning them.

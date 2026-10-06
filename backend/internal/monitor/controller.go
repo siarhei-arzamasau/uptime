@@ -53,7 +53,7 @@ func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.H
 // @Summary Create a website monitor
 // @ID createMonitor
 // @Tags monitors
-// @Description Saves configuration and discovers an optional PNG favicon; schedules an immediate background GET check. Only original HTTP 200 is successful; redirects are not followed. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds, at least 5.
+// @Description Saves configuration and discovers an optional PNG favicon; schedules an immediate background GET check. Returns the committed initial pending status without a post-commit status query; later observations are read through status polling. Only original HTTP 200 is successful; redirects are not followed. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds, at least 5.
 // @Accept json
 // @Produce json
 // @Security BearerAuth

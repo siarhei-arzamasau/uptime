@@ -171,8 +171,12 @@ func (w *Worker) Run(ctx context.Context) {
 			claimCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			jobs, err := w.store.ClaimChecks(claimCtx, capacity)
 			cancel()
-			if err != nil && ctx.Err() == nil {
-				slog.Error("monitor claim failed")
+			if err != nil {
+				if ctx.Err() == nil {
+					slog.Error("monitor claim failed")
+				}
+				// Scanned rows are not durable leases if their query or transaction commit failed.
+				jobs = nil
 			}
 			for _, job := range jobs {
 				w.active.Add(1)

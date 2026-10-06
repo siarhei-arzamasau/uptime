@@ -49,7 +49,10 @@ func (c *Controller) addStatuses(w http.ResponseWriter, r *http.Request, monitor
 
 func (c *Controller) writeMonitor(w http.ResponseWriter, r *http.Request, m store.Monitor, code int) {
 	monitors := c.withFavicons(r.Context(), []store.Monitor{m})
-	if !c.addStatuses(w, r, monitors) {
+	if code == http.StatusCreated {
+		// The creation transaction already committed; a follow-up read must not turn it into a failed mutation.
+		monitors[0].Check = store.MonitorStatus{ID: m.ID, Version: 1, Status: "pending"}
+	} else if !c.addStatuses(w, r, monitors) {
 		return
 	}
 	httpx.WriteJSON(w, code, monitors[0])

@@ -3,12 +3,16 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
+	"gorm.io/gorm"
 	"uptime-app/backend/internal/store"
 )
 
@@ -263,5 +267,80 @@ func TestMonitoringMigrationUpgrade(t *testing.T) {
 	history, err := f.s.CheckHistory(t.Context(), owner.User.ID, m.ID, "1h")
 	if err != nil || history.Availability != nil {
 		t.Fatal("rollback did not remove new history")
+	}
+}
+
+func TestMonitorCreationDoesNotReadStatusAfterCommit(t *testing.T) {
+	f := setup(t)
+	owner := f.register(t, "create-commit@example.com")
+	var statusReads atomic.Int64
+	if err := f.s.DB.Callback().Row().Before("gorm:row").Register("test:reject_status_read", func(db *gorm.DB) {
+		if strings.Contains(db.Statement.SQL.String(), "CASE WHEN s.last_started_at") {
+			statusReads.Add(1)
+			db.AddError(errors.New("status read unavailable"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	response := request(
+		f.handler,
+		"POST",
+		"/api/v1/monitors",
+		`{"url":"http://127.0.0.1/commit-test","interval_seconds":5}`,
+		owner.Access,
+		nil,
+		map[string]string{"X-CSRF-Protection": "1"},
+	)
+	checkStatus(t, response, 201)
+	var payload struct {
+		store.Monitor
+		Check store.MonitorStatus `json:"check"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if statusReads.Load() != 0 || payload.Check.ID != payload.ID || payload.Check.Version != 1 || payload.Check.Status != "pending" {
+		t.Fatalf("creation did not return its committed pending snapshot: %+v", payload.Check)
+	}
+	var saved store.Monitor
+	if err := f.s.DB.First(&saved, "id = ? AND user_id = ?", payload.ID, owner.User.ID).Error; err != nil {
+		t.Fatal("acknowledged monitor not persisted", err)
+	}
+	var schedule store.MonitorState
+	if err := f.s.DB.First(&schedule, "monitor_id = ?", payload.ID).Error; err != nil {
+		t.Fatal("acknowledged schedule not persisted", err)
+	}
+	if saved.URL != payload.URL || schedule.Version != payload.Check.Version || schedule.LastStartedAt != nil {
+		t.Fatal("creation response differs from committed configuration/schedule")
+	}
+}
+
+func TestClaimChecksDiscardsRowsOnCommitFailure(t *testing.T) {
+	f := setup(t)
+	owner := f.register(t, "claim-commit@example.com")
+	m := dueMonitor(t, f, owner.User.ID)
+	// A deferred trigger lets RETURNING rows reach Go before PostgreSQL rejects the commit.
+	if err := f.s.DB.Exec(`CREATE FUNCTION reject_claim_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+ BEGIN RAISE EXCEPTION 'claim commit rejected'; RETURN NEW; END $$;
+ CREATE CONSTRAINT TRIGGER reject_claim_commit AFTER UPDATE ON monitor_states
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_claim_commit()`).Error; err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := f.s.ClaimChecks(t.Context(), 1)
+	if err == nil || len(jobs) != 0 {
+		t.Fatalf("commit failure exposed %d unleased jobs (error present=%v)", len(jobs), err != nil)
+	}
+	var state store.MonitorState
+	if err := f.s.DB.First(&state, "monitor_id = ?", m.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if state.JobID != nil || state.LeaseUntil != nil {
+		t.Fatal("failed claim left a durable lease")
+	}
+	if err := f.s.DB.Exec("DROP TRIGGER reject_claim_commit ON monitor_states").Error; err != nil {
+		t.Fatal(err)
+	}
+	if job := claimOne(t, f); job.MonitorID != m.ID {
+		t.Fatal("rolled-back monitor was not reclaimable")
 	}
 }
