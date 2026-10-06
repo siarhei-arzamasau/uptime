@@ -2,14 +2,16 @@
 
 ## Project Structure
 
-This directory contains the Go module `uptime-app/backend`. `cmd/api/main.go` starts the authentication HTTP API. Packages under `internal/` handle configuration, GORM persistence, authentication, and HTTP. Versioned SQL migrations live under `migrations/`; run them with `cmd/migrate`.
+This directory contains the Go module `uptime-app/backend`. `cmd/api/main.go` starts the HTTP API; `cmd/worker/main.go` runs scheduled URL checks. Packages under `internal/` handle configuration, GORM persistence, authentication, and HTTP. Versioned SQL migrations live under `migrations/`; run them with `cmd/migrate`.
 
 ## Development Commands
 
 Requires Go 1.26+. Run commands from `backend/`:
 
 - `go run ./cmd/api`: start the API after exporting `.env` and applying migrations.
-- `go build -o bin/api ./cmd/api`: compile the executable.
+- `go build -o bin/api ./cmd/api`: compile the API.
+- `go build -o bin/worker ./cmd/worker`: compile the monitoring worker.
+- `go run ./cmd/worker`: start checks after applying migrations and exporting DATABASE_URL.
 - `go test ./...`: run unit tests; PostgreSQL tests require `TEST_DATABASE_URL`.
 - `go generate ./cmd/api`: regenerate the OpenAPI 3.1 JSON/YAML contract with the pinned swaggo tool.
 - `make redoc`: regenerate the contract and build the ignored `docs/redoc.html` reference page; requires Make and Node.js 18+. The generated page uses pinned ReDoc from its CDN.
@@ -21,7 +23,7 @@ Use `gofmt` formatting, including tabs for indentation. Use lowercase package na
 
 ## Testing
 
-Use Go's standard `testing` package with colocated `*_test.go` files and `TestXxx` functions. No coverage threshold is configured. Run `go test ./...`, `go vet ./...`, and the build command above. Integration tests require a dedicated PostgreSQL database ending in `_test` via `TEST_DATABASE_URL`; each test isolates data in its own schema. Follow README setup commands. Report skipped integration tests or an unavailable toolchain.
+Use Go's standard `testing` package with colocated `*_test.go` files and `TestXxx` functions. No coverage threshold is configured. Run `go test ./...`, `go vet ./...`, and both build commands above. Integration tests require a dedicated PostgreSQL database ending in `_test` via `TEST_DATABASE_URL`; each test isolates data in its own schema. Follow README setup commands. Report skipped integration tests or an unavailable toolchain.
 
 ## Dependencies & Configuration
 

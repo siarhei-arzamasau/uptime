@@ -25,7 +25,7 @@ func TestMonitorCreationPersistenceAndOwnership(t *testing.T) {
 	if strings.TrimSpace(empty.Body.String()) != `{"monitors":[]}` {
 		t.Fatal("empty list must be an array")
 	}
-	for _, interval := range []int{1, 5, 7, 60, 600, 3600, 7200, 2147483647} {
+	for _, interval := range []int{5, 6, 7, 60, 600, 3600, 7200, 2147483647} {
 		body := fmt.Sprintf(`{"url":"  https://example.com/health  ","interval_seconds":%d}`, interval)
 		created := request(f.handler, "POST", "/api/v1/monitors", body, owner.Access, nil, headers)
 		checkStatus(t, created, 201)
@@ -78,7 +78,7 @@ func TestMonitorRejectsInvalidRequests(t *testing.T) {
 	for _, body := range []string{
 		`null`, `{}`, `[]`, `{"url":"https://example.com"}`, `{"url":null,"interval_seconds":7}`,
 		`{"url":"https://127.0.0.999","interval_seconds":7}`, `{"url":"javascript:alert(1)","interval_seconds":7}`, `{"url":"https://user:secret@example.com","interval_seconds":7}`,
-		`{"url":"https://example.com","interval_seconds":0}`, `{"url":"https://example.com","interval_seconds":-1}`,
+		`{"url":"https://example.com","interval_seconds":0}`, `{"url":"https://example.com","interval_seconds":4}`, `{"url":"https://example.com","interval_seconds":-1}`,
 		`{"url":"https://example.com","interval_seconds":1.5}`, `{"url":"https://example.com","interval_seconds":2147483648}`,
 		`{"url":"https://example.com","interval_seconds":"7"}`, `{"url":"https://example.com","interval_seconds":7,"user_id":"other"}`,
 		valid + `{}`, `{"url":"` + strings.Repeat("a", 17000) + `","interval_seconds":7}`,
@@ -132,7 +132,7 @@ func TestMonitorPagination(t *testing.T) {
 		cursor = result.NextCursor
 		if index == 0 {
 			// An insert ahead of the cursor must not shift or repeat subsequent pages.
-			m := store.Monitor{ID: uuid.New(), UserID: owner.User.ID, URL: "https://new.example", IntervalSeconds: 1, CreatedAt: created.Add(time.Second)}
+			m := store.Monitor{ID: uuid.New(), UserID: owner.User.ID, URL: "https://new.example", IntervalSeconds: 5, CreatedAt: created.Add(time.Second)}
 			if err := f.s.CreateMonitor(context.Background(), &m); err != nil {
 				t.Fatal(err)
 			}
@@ -176,7 +176,7 @@ func TestMonitorUpdateAndDeleteOwnership(t *testing.T) {
 	}
 	for _, invalid := range []string{
 		`{}`, `null`, `[]`, `{"url":"ftp://example.com","interval_seconds":7}`,
-		`{"url":"https://example.com","interval_seconds":0}`,
+		`{"url":"https://example.com","interval_seconds":0}`, `{"url":"https://example.com","interval_seconds":4}`,
 		`{"url":"https://example.com","interval_seconds":1.5}`,
 		`{"url":"https://example.com","interval_seconds":2147483648}`,
 		`{"url":"https://example.com","interval_seconds":7,"user_id":"other"}`,

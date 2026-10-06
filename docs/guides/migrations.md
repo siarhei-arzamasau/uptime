@@ -14,10 +14,10 @@ Read the [repository instructions](../../AGENTS.md), [backend instructions](../.
 | `backend/internal/store/` | GORM models and persistence code that must match the schema. GORM does not own schema changes. |
 | `backend/internal/auth/controller_integration_test.go` | PostgreSQL fixture and `TestMigrations`; tests create independent schemas, apply migrations, and remove their own schemas. |
 | `backend/.env.example`, `backend/docker-compose.yml` | Local configuration and PostgreSQL 17 service. Local secrets belong in ignored `backend/.env`. |
-| `scripts/dev.mjs` | Combined launcher: applies all pending migrations before building/starting the API and frontend. |
+| `scripts/dev.mjs` | Combined launcher: applies all pending migrations before building/starting the API, monitoring worker, and frontend. |
 | `frontend/playwright.config.ts` | E2E invokes the launcher with `--e2e`, targeting `uptime_e2e_test`. |
 
-The current migration sequence is `00001_auth.sql`, `00002_user_name.sql`, `00003_user_avatar.sql`, and `00004_monitors.sql`. Inspect the directory each time; do not assume the next version is still `00005`.
+The current migration sequence is `00001_auth.sql`, `00002_user_name.sql`, `00003_user_avatar.sql`, `00004_monitors.sql`, and `00005_monitor_checks.sql`. Inspect the directory each time; do not assume the next version is still `00006`.
 
 The runner supports exactly these commands:
 

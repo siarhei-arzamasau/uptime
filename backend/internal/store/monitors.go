@@ -14,14 +14,19 @@ type Monitor struct {
 	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id" swaggertype:"string" format:"uuid"`
 	UserID          uuid.UUID `gorm:"type:uuid" json:"-"`
 	URL             string    `json:"url"`
-	IntervalSeconds int       `json:"interval_seconds" minimum:"1" maximum:"2147483647"`
+	IntervalSeconds int       `json:"interval_seconds" minimum:"5" maximum:"2147483647"`
 	CreatedAt       time.Time `json:"created_at" format:"date-time"`
 }
 
 // CreateMonitor inserts an already-validated, owner-assigned monitor under ctx
-// and returns a constraint or database error; it does not run monitoring checks.
+// and its immediately due schedule atomically; constraint/database errors roll both back.
 func (s *Store) CreateMonitor(ctx context.Context, monitor *Monitor) error {
-	return s.DB.WithContext(ctx).Create(monitor).Error
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(monitor).Error; err != nil {
+			return err
+		}
+		return tx.Exec("INSERT INTO monitor_states(monitor_id) VALUES (?)", monitor.ID).Error
+	})
 }
 
 const MonitorPageSize = 50
@@ -46,20 +51,31 @@ func (s *Store) MonitorsByUser(ctx context.Context, userID uuid.UUID, after *Mon
 	return monitors, err
 }
 
-// UpdateMonitor replaces only configuration and fills monitor with the saved row.
-// The owner predicate is part of the update; missing/foreign IDs return gorm.ErrRecordNotFound.
+// UpdateMonitor saves configuration, schedules a check, and clears history only when the URL changes.
+// Ownership is checked under the row lock; missing/foreign IDs return gorm.ErrRecordNotFound.
 // ctx controls database work; database errors propagate with context.
 func (s *Store) UpdateMonitor(ctx context.Context, monitor *Monitor) error {
-	result := s.DB.WithContext(ctx).Model(monitor).Clauses(clause.Returning{}).
-		Where("id = ? AND user_id = ?", monitor.ID, monitor.UserID).
-		Updates(map[string]any{"url": monitor.URL, "interval_seconds": monitor.IntervalSeconds})
-	if result.Error != nil {
-		return fmt.Errorf("update monitor: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var previous Monitor
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", monitor.ID, monitor.UserID).First(&previous).Error; err != nil {
+			return fmt.Errorf("lock monitor: %w", err)
+		}
+		if err := tx.Model(monitor).Clauses(clause.Returning{}).
+			Updates(map[string]any{"url": monitor.URL, "interval_seconds": monitor.IntervalSeconds}).Error; err != nil {
+			return fmt.Errorf("update monitor: %w", err)
+		}
+		changes := map[string]any{"version": gorm.Expr("version + 1"), "next_check_at": gorm.Expr("now()")}
+		if previous.URL != monitor.URL {
+			changes["last_started_at"], changes["last_finished_at"], changes["last_success"] = nil, nil, nil
+			changes["http_status"], changes["error_kind"] = nil, ""
+			if err := tx.Where("monitor_id = ?", monitor.ID).Delete(&MonitorMinute{}).Error; err != nil {
+				return err
+			}
+		}
+		// Keep an outstanding lease until the old request exits or expires.
+		return tx.Model(&MonitorState{}).Where("monitor_id = ?", monitor.ID).Updates(changes).Error
+	})
 }
 
 // DeleteMonitor permanently removes the owner's monitor under ctx.

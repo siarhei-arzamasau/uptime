@@ -1,6 +1,6 @@
 # Uptime App
 
-Two independent projects: a Go API and a Next.js interface for registration, login, profiles, and website monitors. Users can add, edit, and delete website URLs with configurable check intervals; actual monitoring checks are not implemented yet.
+Two independent projects: a Go API and a Next.js interface for registration, login, profiles, and website monitors. Users can add, edit, and delete website URLs with configurable check intervals; a separate Go worker runs public HTTP GET checks and stores 30 days of minute aggregates for live statuses and availability charts.
 
 ```text
 backend/
@@ -43,7 +43,7 @@ Requires Node.js 22.12+, Go 1.26+, Docker Compose, installed npm dependencies, a
 node scripts/dev.mjs
 ```
 
-The script starts PostgreSQL, applies migrations, and launches the API and frontend. Ctrl+C stops both applications while preserving the database. If Go is not on PATH, set `GO_BIN=/absolute/path/to/go` in `backend/.env`. On macOS, install Go permanently with `brew install go`.
+The script starts PostgreSQL, applies migrations, and launches the API, monitoring worker, and frontend. Ctrl+C stops both applications while preserving the database. If Go is not on PATH, set `GO_BIN=/absolute/path/to/go` in `backend/.env`. On macOS, install Go permanently with `brew install go`.
 
 Configuration details, themes, and tests: [frontend/README.md](frontend/README.md). Plan and checklist: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
 
@@ -55,18 +55,21 @@ work in this project. After implementation, apply
 to verify the affected user flows and desktop/mobile layout before completing the
 task. Builds and automated tests complement this mandatory browser check.
 
-If Playwright MCP is not connected, add the following server to the project's
-`.codex/config.toml`, preserving any existing MCP entries:
+The project's `.codex/config.toml` registers Playwright MCP alongside PostgreSQL:
 
 ```toml
 [mcp_servers.playwright]
 command = "npx"
-args = ["-y", "@playwright/mcp@latest", "--isolated"]
+args = ["-y", "@playwright/mcp@0.0.83", "--browser", "chromium", "--isolated"]
 startup_timeout_sec = 120
+tool_timeout_sec = 60
 ```
 
-Node.js and npm must be on PATH. Reload the MCP configuration or start a new Codex
-session to expose the tools. The isolated browser session avoids reusing personal
+Node.js and npm must be on PATH. The pinned server uses Playwright's Chromium,
+so a system Chrome installation is not required. On a new machine, install its
+matching browser with `npx -y @playwright/mcp@0.0.83 install-browser chrome-for-testing`.
+Reload the MCP configuration or start a new Codex session to expose the tools.
+The isolated browser session avoids reusing personal
 browser state. For checks that change data, start `node scripts/dev.mjs --e2e`
 from the repository root and use `http://localhost:3001` with the dedicated
 `uptime_e2e_test` database; do not run manual verification and the automated E2E

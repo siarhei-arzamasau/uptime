@@ -40,8 +40,8 @@ export function MonitorForm({ monitor, onSaved, onCancel, onUnauthorized }: {
     }
     // Validate converted seconds so a valid minute/hour count cannot overflow storage.
     const count = Number(interval), seconds = count * unit;
-    if (!Number.isInteger(count) || count < 1 || seconds > MAX_INTERVAL_SECONDS) {
-      setFieldError({ field: "interval", message: `Enter a whole number from 1 to ${Math.floor(MAX_INTERVAL_SECONDS / unit).toLocaleString("en-US")}.` });
+    if (!Number.isInteger(count) || count < 1 || seconds < 5 || seconds > MAX_INTERVAL_SECONDS) {
+      setFieldError({ field: "interval", message: `Enter a whole number from ${Math.ceil(5 / unit)} to ${Math.floor(MAX_INTERVAL_SECONDS / unit).toLocaleString("en-US")}.` });
       intervalInput.current?.focus(); return;
     }
     saving.current = true; setBusy(true);
@@ -66,13 +66,14 @@ export function MonitorForm({ monitor, onSaved, onCancel, onUnauthorized }: {
       <fieldset className={styles.intervalField}>
         <legend>Check every</legend>
         <div className={styles.intervalInputs}>
-          <input ref={intervalInput} aria-label="Check interval" type="number" min="1" max={Math.floor(MAX_INTERVAL_SECONDS / unit)} step="1" required value={interval} disabled={busy} onChange={event => setInterval(event.target.value)} aria-invalid={fieldError?.field === "interval"} aria-describedby={fieldError?.field === "interval" ? "monitor-interval-error" : undefined} />
+          <input ref={intervalInput} aria-label="Check interval" type="number" min={Math.ceil(5 / unit)} max={Math.floor(MAX_INTERVAL_SECONDS / unit)} step="1" required value={interval} disabled={busy} onChange={event => setInterval(event.target.value)} aria-invalid={fieldError?.field === "interval"} aria-describedby={fieldError?.field === "interval" ? "monitor-interval-error" : undefined} />
           <select aria-label="Interval unit" value={unit} disabled={busy} onChange={event => setUnit(Number(event.target.value))}>{units.map(option => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select>
         </div>
         {fieldError?.field === "interval" && <p id="monitor-interval-error" className={styles.error}>{fieldError.message}</p>}
       </fieldset>
     </div>
-    <p className={styles.note}>Your settings will be saved. Monitoring checks are not running yet.</p>
+    {monitor && url.trim() !== monitor.url && <p className={styles.alert}>Changing the URL will permanently clear this website’s monitoring history.</p>}
+    <p className={styles.note}>Checks start automatically after saving. Only HTTP 200 counts as success. Minimum interval: 5 seconds.</p>
     {saveError && <p role="alert" className={styles.alert}>{saveError}</p>}
     <div className={styles.actions}><button type="button" className={styles.secondary} disabled={busy} onClick={onCancel}>Cancel</button><button className={styles.primary} disabled={busy}>{busy ? (monitor ? "Saving…" : "Creating…") : (monitor ? "Save changes" : "Create")}</button></div>
   </form>;

@@ -3,3 +3,9 @@ command = "node"
 args = ["scripts/postgres-mcp.mjs"]
 startup_timeout_sec = 120
 tool_timeout_sec = 60
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@0.0.83", "--browser", "chromium", "--isolated"]
+startup_timeout_sec = 120
+tool_timeout_sec = 60

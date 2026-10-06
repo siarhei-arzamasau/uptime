@@ -8,7 +8,7 @@ import { createMonitor, loadMonitors, updateMonitor, deleteMonitor } from "./cli
 
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-vi.mock("./client", () => ({ loadMonitors: vi.fn(), createMonitor: vi.fn(), updateMonitor: vi.fn(), deleteMonitor: vi.fn() }));
+vi.mock("./client", () => ({ loadMonitors: vi.fn(), createMonitor: vi.fn(), updateMonitor: vi.fn(), deleteMonitor: vi.fn(), loadStatuses: vi.fn().mockResolvedValue({ monitors: [] }), loadHistory: vi.fn() }));
 const monitor = { id: "monitor-id", url: "https://example.com", interval_seconds: 7, created_at: "2026-09-22" };
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(loadMonitors).mockResolvedValue({ monitors: [] }); vi.mocked(createMonitor).mockResolvedValue({ monitor }); });
 async function openForm() {
@@ -69,7 +69,7 @@ it("recovers a failed list request and displays saved intervals", async () => {
   vi.mocked(loadMonitors).mockRejectedValueOnce(new Error("Service unavailable")).mockResolvedValueOnce({ monitors: [{ ...monitor, interval_seconds: 7200 }] });
   render(<Monitors />); expect(await screen.findByRole("alert")).toHaveTextContent("Service unavailable");
   await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-  expect(await screen.findByText("Every 2 hours")).toBeVisible(); expect(screen.getByText("Not checked yet")).toBeVisible();
+  expect(await screen.findByText("Every 2 hours")).toBeVisible(); expect(screen.getByText("Awaiting first check")).toBeVisible();
 });
 
 it("redirects an expired session without showing saved monitors", async () => {

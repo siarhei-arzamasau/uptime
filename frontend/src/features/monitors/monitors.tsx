@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthError } from "../auth/transport";
-import { loadMonitors } from "./client";
+import { loadMonitors, loadStatuses } from "./client";
 import { MonitorForm } from "./monitor-form";
 import { DeleteMonitorConfirmation } from "./delete-monitor-confirmation";
 import { MonitorList } from "./monitor-list";
@@ -17,6 +17,10 @@ import styles from "./monitors.module.css";
 export function Monitors() {
   const router = useRouter();
   const [monitors, setMonitors] = useState<Monitor[]>();
+  const [now, setNow] = useState(0);
+  const [statusError, setStatusError] = useState("");
+  const statusBusy = useRef(false);
+  const configuration = JSON.stringify(monitors?.map(m => [m.id, m.url, m.interval_seconds, m.check?.version]) ?? []);
   const [cursor, setCursor] = useState<string>();
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -43,6 +47,42 @@ export function Monitors() {
     });
     return () => { active = false; mounted.current = false; };
   }, [attempt, router]);
+
+  useEffect(() => {
+    const entries = JSON.parse(configuration) as [string, string, number, number | null][];
+    if (!entries.length) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function refresh() {
+      if (!active) return;
+      if (document.hidden || statusBusy.current) { timer = setTimeout(refresh, 1000); return; }
+      statusBusy.current = true;
+      try {
+        for (let offset = 0; offset < entries.length && active; offset += 50) {
+          const result = await loadStatuses(entries.slice(offset, offset + 50).map(([id]) => id));
+          if (!active) return;
+          const statuses = new Map(result.monitors.map(check => [check.id, check]));
+          setMonitors(current => current?.map(m => {
+            const check = statuses.get(m.id);
+            return check && check.version >= (m.check?.version ?? 0) ? { ...m, check } : m;
+          }));
+        }
+        if (active) setStatusError("");
+      } catch (error) {
+        if (active) {
+          if (error instanceof AuthError && error.status === 401) router.replace("/login");
+          else setStatusError(error instanceof Error ? error.message : "Unable to refresh statuses.");
+        }
+      } finally {
+        statusBusy.current = false;
+        if (active) { clearTimeout(timer); setNow(Date.now()); timer = setTimeout(refresh, 5000); }
+      }
+    }
+    function visible() { if (!document.hidden) { clearTimeout(timer); void refresh(); } }
+    timer = setTimeout(refresh, 5000);
+    document.addEventListener("visibilitychange", visible);
+    return () => { active = false; clearTimeout(timer); document.removeEventListener("visibilitychange", visible); };
+  }, [configuration, router]);
 
   useEffect(() => {
     if (!open && !selected && restoreFocus.current) {
@@ -78,14 +118,14 @@ export function Monitors() {
 
   return <section aria-label="Website monitors" className={styles.monitors}>
     <div className={styles.toolbar}>
-      <p className={styles.intro}>Save your websites and choose how often to check them.</p>
+      <p className={styles.intro}>Monitor availability and choose how often to check your websites.</p>
       <button ref={addButton} className={styles.primary} aria-expanded={open} aria-controls="monitor-form" disabled={!monitors || open || !!selected} onClick={() => { setSaved(""); setOpen(true); }}>Add website</button>
     </div>
     {loadError ? <div role="alert" className={styles.alert}>{loadError} <button className={styles.secondary} onClick={() => { setLoadError(""); setAttempt(value => value + 1); }}>Try again</button></div> : !monitors ? <p role="status">Loading websites…</p> : null}
     {saved && <p role="status" className={styles.success}>{saved}</p>}
     {open && <MonitorForm onCancel={closeForm} onUnauthorized={unauthorized} onSaved={monitor => {
       setMonitors(current => [monitor, ...(current ?? [])]);
-      closeForm(); setSaved("Website added. Checks have not started yet.");
+      closeForm(); setSaved("Website added. Checks are starting.");
     }} />}
     {selected?.action === "edit" && <MonitorForm key={selected.monitor.id} monitor={selected.monitor} onCancel={closeForm} onUnauthorized={unauthorized} onSaved={monitor => {
       setMonitors(current => current?.map(existing => existing.id === monitor.id ? monitor : existing));
@@ -95,8 +135,10 @@ export function Monitors() {
       setMonitors(current => current?.filter(monitor => monitor.id !== selected.monitor.id));
       closeForm(); setSaved("Website deleted.");
     }} />}
+    {statusError && <p role="alert" className={styles.alert}>{statusError} Status updates will retry automatically.</p>}
     {monitors && (monitors.length ? <MonitorList
       monitors={monitors}
+      now={now}
       disabled={open || !!selected || loadingMore}
       onEdit={(monitor, button) => {
         actionButton.current = button; setSaved(""); setSelected({ action: "edit", monitor });

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/swaggo/swag/v2/gen"
+	"uptime-app/backend/internal/openapi"
 )
 
 func TestContractMatchesAnnotations(t *testing.T) {
@@ -30,6 +31,9 @@ func TestContractMatchesAnnotations(t *testing.T) {
 		GenerateOpenAPI3Doc: true,
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := openapi.NormalizeNullable(out); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"swagger.json", "swagger.yaml"} {
@@ -134,5 +138,32 @@ func TestContractCoversRegisteredRoutesAndSecurity(t *testing.T) {
 	}
 	for route := range documented {
 		t.Errorf("OpenAPI operation %s has no registered controller route", route)
+	}
+}
+
+func TestMonitoringNullability(t *testing.T) {
+	data, err := os.ReadFile("swagger.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Components struct {
+			Schemas map[string]struct{ Properties map[string]struct{ Type any } }
+		}
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	for name, fields := range map[string][]string{
+		"store.MonitorStatus":  {"last_started_at", "last_finished_at", "last_success", "http_status"},
+		"store.MonitorHistory": {"availability"},
+		"store.HistoryBucket":  {"availability"},
+	} {
+		for _, field := range fields {
+			types, ok := document.Components.Schemas[name].Properties[field].Type.([]any)
+			if !ok || len(types) != 2 || types[1] != "null" {
+				t.Errorf("%s.%s must accept null", name, field)
+			}
+		}
 	}
 }

@@ -4,15 +4,19 @@ Next.js 16 / React 19 authentication UI with light and dark themes. The interfac
 
 ## Website monitors
 
-On `/dashboard`, choose **Add website**, enter an HTTP/HTTPS URL, and set a positive whole-number interval with seconds, minutes, or hours. Select **Create** to save the monitor and show it in the list. Settings persist after reload and are private to the signed-in user. Checks are not running yet; the list shows **Not checked yet**.
+On `/dashboard`, choose **Add website**, enter an HTTP/HTTPS URL, and set a whole-number interval of at least 5 seconds with seconds, minutes, or hours. Select **Create** to save the monitor and show it in the list. Settings persist after reload and are private to the signed-in user. The worker starts checks automatically. The list shows **Awaiting first check**, **Working**, **Unavailable**, or **No fresh data**, including the last observation and failure reason.
 
 Use **Edit** beside a website to change its URL or interval, then **Save changes**. Use **Delete** and confirm **Delete website** to permanently remove it. Cancel leaves saved settings unchanged; service errors preserve the draft or deletion confirmation.
 
 Website rows show a PNG favicon when one is available, otherwise a globe. The API discovers icons on list, create, and update, so changing a URL replaces the previous icon. Images are sent as validated PNG data URIs; the browser makes no request to the monitored site. Missing, unsupported, or unreadable images use the same globe fallback.
 
-Intervals are stored as seconds (1–2,147,483,647); the form validates the maximum for the selected unit. `POST /api/auth/monitors` lists monitors and `POST /api/auth/monitors/create` creates one. `POST /api/auth/monitors/{id}/update` replaces its configuration and `POST /api/auth/monitors/{id}/delete` deletes it. All use the existing authentication Web Lock and server-only adapter, including HttpOnly cookie refresh and CSRF checks. Reads use POST because session refresh may rotate cookies. No tokens are sent in response JSON.
+Intervals are stored as seconds (5–2,147,483,647); the form validates the maximum for the selected unit. `POST /api/auth/monitors` lists monitors and `POST /api/auth/monitors/create` creates one. `POST /api/auth/monitors/{id}/update` replaces its configuration and `POST /api/auth/monitors/{id}/delete` deletes it. All use the existing authentication Web Lock and server-only adapter, including HttpOnly cookie refresh and CSRF checks. Reads use POST because session refresh may rotate cookies. No tokens are sent in response JSON.
 
-Restart the combined launcher to apply migration `00004_monitors.sql`. Component and API tests cover validation and error recovery; Playwright covers custom intervals in all three units, editing, confirmed deletion, reload persistence, session refresh, account isolation, and desktop/mobile layouts.
+Restart the combined launcher to apply migration `00005_monitor_checks.sql` and start the worker. Component and API tests cover validation and error recovery; Playwright covers custom intervals in all three units, editing, confirmed deletion, reload persistence, session refresh, account isolation, and desktop/mobile layouts.
+
+**History** expands one availability chart with 1-hour, 24-hour, 7-day, and 30-day windows (24 hours by default). The range control supports keyboard and touch inspection of individual buckets. Empty intervals remain gaps; percentages describe successful samples, not exact elapsed uptime. A changed URL displays a warning and clears its history after saving; changing only the interval preserves it.
+
+Statuses refresh every 5 seconds through `POST /api/auth/monitors/status?ids=...`; open history refreshes every 30 seconds through `POST /api/auth/monitors/{id}/history?period=...`. Both pause in hidden tabs, refresh on visibility, serialize requests through the auth Web Lock, and discard outdated responses. Statistics requests do not rediscover favicons. Failures preserve the last displayed data with an error message and automatic retry.
 
 ## Requirements and local setup
 

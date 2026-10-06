@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
-const backendKeys = ["AVATAR_DIR", "GO_BIN", "DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "JWT_ISSUER", "JWT_AUDIENCE", "ALLOWED_ORIGIN", "COOKIE_SECURE", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"];
+const backendKeys = ["COMPOSE_PROJECT_NAME", "MONITOR_CONCURRENCY", "AVATAR_DIR", "GO_BIN", "DATABASE_URL", "HTTP_ADDR", "JWT_SECRET", "JWT_ISSUER", "JWT_AUDIENCE", "ALLOWED_ORIGIN", "COOKIE_SECURE", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"];
 const frontendKeys = ["BACKEND_URL", "APP_ORIGIN", "NEXT_DIST_DIR"];
 const commonKeys = ["PATH", "HOME", "USER", "TMPDIR", "SHELL", "LANG", "LC_ALL", "GOPATH", "GOCACHE", "GOMODCACHE", "GOPROXY", "GOTOOLCHAIN", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"];
 function pick(env, keys) { return Object.fromEntries(keys.filter(k => env[k] !== undefined).map(k => [k, env[k]])); }
@@ -38,8 +38,8 @@ export function configuration(backendText, frontendText, ambient, e2e = false) {
   return { root, e2e, goCommand: b.GO_BIN || "go", api: api.origin, origin: origin.origin, apiPort, frontendPort: Number(origin.port || 80), backendEnv: { ...common, ...pick(b, backendKeys) }, frontendEnv: { ...common, ...pick(f, frontendKeys), NEXT_TELEMETRY_DISABLED: "1" }, common };
 }
 /**
- * Starts database, migrations, API, and frontend in order using injected operations.
- * Resolves after both apps are ready; a failed check/startup step rejects before later steps.
+ * Starts database, migrations, API, worker, and frontend in order using injected operations.
+ * Resolves after the HTTP apps are ready and the worker has started; a failed check/startup step rejects before later steps.
  */
 export async function boot(c, ops) {
   await ops.check(c);
@@ -54,6 +54,8 @@ export async function boot(c, ops) {
   await ops.run(c.goCommand, ["build", "-o", c.e2e ? "bin/api-e2e" : "bin/api", "./cmd/api"], { ...b, label: "backend" });
   ops.start(path.join(b.cwd, c.e2e ? "bin/api-e2e" : "bin/api"), [], { ...b, label: "backend" });
   await ops.ready(`${c.api}/api/v1/auth/me`, 401);
+  await ops.run(c.goCommand, ["build", "-o", c.e2e ? "bin/worker-e2e" : "bin/worker", "./cmd/worker"], { ...b, label: "worker" });
+  ops.start(path.join(b.cwd, c.e2e ? "bin/worker-e2e" : "bin/worker"), [], { ...b, label: "worker" });
   ops.start("npm", ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(c.frontendPort)], { cwd: path.join(c.root, "frontend"), env: c.frontendEnv, label: "frontend" });
   await ops.ready(`${c.origin}/login`, 200);
   ops.log(`Ready: frontend ${c.origin} · backend ${c.api}`);
