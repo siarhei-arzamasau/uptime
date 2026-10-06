@@ -42,7 +42,7 @@ test("creates configurable website monitors, persists them and isolates accounts
   await expect(page.getByText("Every 7 seconds", { exact: true })).toBeVisible();
   await expect(page.getByText("Every 10 minutes", { exact: true })).toBeVisible();
   await expect(page.getByText("Every 2 hours", { exact: true })).toBeVisible();
-  await expect(page.getByText("Not checked yet", { exact: true })).toHaveCount(3);
+  await expect(page.getByText("Live checks · HTTP 200 only", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("website-monitors.png"), fullPage: true });
   await page.getByRole("button", { name: "Toggle color theme" }).click();
@@ -116,4 +116,51 @@ test("loads large monitor lists in bounded pages", async ({ page }, testInfo) =>
   await expect(page.getByRole("listitem")).toHaveCount(51);
   await expect(more).toHaveCount(0);
   await expect(page.getByText("https://example.com/page/0", { exact: true })).toBeVisible();
+});
+
+test("runs checks, shows history and distinguishes missing data", async ({ page, context }, testInfo) => {
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(`checks-${randomUUID()}@example.com`);
+  await page.getByLabel("Password", { exact: true }).fill("correct horse battery staple");
+  await page.getByLabel("Confirm password").fill("correct horse battery staple");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Add website" }).click();
+  const url = "https://monitoring-e2e.invalid/health";
+  await page.getByLabel("Website URL").fill(url);
+  await page.getByLabel("Interval unit").selectOption("1");
+  await page.getByLabel("Check interval", { exact: true }).fill("4");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByLabel("Check interval", { exact: true })).toHaveAttribute("aria-invalid", "true");
+  await page.getByLabel("Check interval", { exact: true }).fill("5");
+  const created = page.waitForResponse(response => response.url().endsWith("/api/auth/monitors/create") && response.status() === 201);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const { monitor } = await (await created).json();
+  await expect(page.getByText("Unavailable", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/DNS lookup failed/)).toBeVisible();
+  // Ensure the new polling path recovers an expired access cookie as well.
+  await context.clearCookies({ name: "uptime_access" });
+  await page.getByRole("button", { name: `History for ${url}`, exact: true }).click();
+  await expect(page.getByRole("region", { name: "Availability history" }).getByText("0.00%", { exact: true }).first()).toBeVisible();
+  const slider = page.getByRole("slider", { name: "Inspect time interval" });
+  await slider.focus(); await slider.press("Home");
+  await expect(slider).toHaveAttribute("aria-valuetext", /No data/);
+  await page.getByRole("button", { name: "30 days", exact: true }).click();
+  await expect(slider).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("monitor-history.png"), fullPage: true });
+  await page.getByRole("button", { name: "Toggle color theme" }).click();
+  await page.screenshot({ path: testInfo.outputPath("monitor-history-alternate-theme.png"), fullPage: true });
+
+  // Controlled status responses test recovery and stale presentation independently of public DNS.
+  let state = "up";
+  await page.route("**/api/auth/monitors/status?*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ monitors: [{ id: monitor.id, version: 1, status: state, last_started_at: new Date().toISOString(), last_finished_at: new Date().toISOString(), last_success: true, http_status: 200, error_kind: "" }] }) }));
+  await expect(page.getByText("Working", { exact: true })).toBeVisible();
+  state = "stale";
+  await expect(page.getByText("No fresh data · Last result: working", { exact: true })).toBeVisible();
+  await page.unroute("**/api/auth/monitors/status?*");
+  await page.getByRole("button", { name: `Edit ${url}`, exact: true }).click();
+  await page.getByLabel("Website URL").fill("https://changed-monitoring-e2e.invalid");
+  await expect(page.getByText(/Changing the URL will permanently clear/)).toBeVisible();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Website updated.", { exact: true })).toBeVisible();
 });

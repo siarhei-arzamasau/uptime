@@ -4,6 +4,7 @@ import { handleAuthenticated } from "../auth/server";
 import { APIError } from "../../lib/api-error";
 import { readJSON } from "../../lib/request-body";
 import { MAX_INTERVAL_SECONDS, validMonitorURL } from "./validation";
+import { decodeCheck } from "./statistics-server";
 import type { Monitor, MonitorPage } from "./types";
 
 function invalidResponse() {
@@ -15,7 +16,7 @@ function monitor(value: unknown): Monitor {
   // URLs are displayed as text, so legacy URLs must not break the entire list.
   if (!m || typeof m.id !== "string" || typeof m.url !== "string" || new TextEncoder().encode(m.url).length > 2048 || typeof m.created_at !== "string" || typeof m.interval_seconds !== "number" || !Number.isInteger(m.interval_seconds) || m.interval_seconds < 1 || m.interval_seconds > MAX_INTERVAL_SECONDS) throw invalidResponse();
   const favicon = typeof m.favicon === "string" && m.favicon.length <= 87406 && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(m.favicon) ? m.favicon : undefined;
-  return { id: m.id, url: m.url, interval_seconds: m.interval_seconds, created_at: m.created_at, ...(favicon ? { favicon } : {}) };
+  return { id: m.id, url: m.url, interval_seconds: m.interval_seconds, created_at: m.created_at, ...(favicon ? { favicon } : {}), ...(m.check === undefined ? {} : { check: decodeCheck(m.check) }) };
 }
 function page(value: unknown): MonitorPage {
   const data = value as Partial<MonitorPage> | undefined;
@@ -50,7 +51,7 @@ export function handleMonitors(req: NextRequest, action: "list" | "create" | "up
     if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 2 || !("url" in body) || typeof body.url !== "string" || !("interval_seconds" in body) || typeof body.interval_seconds !== "number") throw new APIError(400, "invalid_request", "Provide only a URL and check interval.");
     const url = body.url.trim(), interval = body.interval_seconds;
     if (!validMonitorURL(url)) throw new APIError(400, "invalid_url", "Enter a valid HTTP or HTTPS URL without credentials or a fragment; use punycode for international domains.");
-    if (!Number.isInteger(interval) || interval < 1 || interval > MAX_INTERVAL_SECONDS) throw new APIError(400, "invalid_interval", "Enter a positive whole-number interval up to 2147483647 seconds.");
+    if (!Number.isInteger(interval) || interval < 5 || interval > MAX_INTERVAL_SECONDS) throw new APIError(400, "invalid_interval", "Enter a whole-number interval from 5 to 2147483647 seconds.");
     return { path: action === "update" ? `monitors/${id}` : "monitors", method: action === "update" ? "PUT" : "POST", body: JSON.stringify({ url, interval_seconds: interval }), decode: data => ({ monitor: monitor(data) }), status: action === "update" ? 200 : 201, onError };
   });
 }

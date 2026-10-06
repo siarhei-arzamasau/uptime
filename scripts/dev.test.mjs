@@ -21,8 +21,8 @@ it("selects a dedicated E2E database and ports", () => {
 function operations() { return { check: vi.fn().mockResolvedValue(), free: vi.fn().mockResolvedValue(), run: vi.fn().mockResolvedValue(), start: vi.fn(), ready: vi.fn().mockResolvedValue(), log: vi.fn() }; }
 it("starts database, migration, build, API and frontend in order", async () => {
   const c = configuration(backend, frontend, {}); const ops = operations(); await boot(c, ops);
-  expect(ops.run.mock.calls.map(([cmd, args]) => [cmd, ...args].join(" "))).toEqual(["docker compose up -d --wait --wait-timeout 60", "go run ./cmd/migrate up", "go build -o bin/api ./cmd/api"]);
-  expect(ops.start.mock.calls[0][0]).toContain("bin/api"); expect(ops.ready.mock.calls).toEqual([["http://127.0.0.1:8080/api/v1/auth/me", 401], ["http://localhost:3000/login", 200]]);
+  expect(ops.run.mock.calls.map(([cmd, args]) => [cmd, ...args].join(" "))).toEqual(["docker compose up -d --wait --wait-timeout 60", "go run ./cmd/migrate up", "go build -o bin/api ./cmd/api", "go build -o bin/worker ./cmd/worker"]);
+  expect(ops.start.mock.calls[0][0]).toContain("bin/api"); expect(ops.start.mock.calls[1][0]).toContain("bin/worker"); expect(ops.ready.mock.calls).toEqual([["http://127.0.0.1:8080/api/v1/auth/me", 401], ["http://localhost:3000/login", 200]]);
   expect(ops.ready.mock.invocationCallOrder[0]).toBeLessThan(ops.start.mock.invocationCallOrder[1]);
 });
 it("does not start applications after migration failure", async () => {
