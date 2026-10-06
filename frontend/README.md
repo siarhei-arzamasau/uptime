@@ -8,6 +8,8 @@ On `/dashboard`, choose **Add website**, enter an HTTP/HTTPS URL, and set a posi
 
 Use **Edit** beside a website to change its URL or interval, then **Save changes**. Use **Delete** and confirm **Delete website** to permanently remove it. Cancel leaves saved settings unchanged; service errors preserve the draft or deletion confirmation.
 
+Website rows show a PNG favicon when one is available, otherwise a globe. The API discovers icons on list, create, and update, so changing a URL replaces the previous icon. Images are sent as validated PNG data URIs; the browser makes no request to the monitored site. Missing, unsupported, or unreadable images use the same globe fallback.
+
 Intervals are stored as seconds (1–2,147,483,647); the form validates the maximum for the selected unit. `POST /api/auth/monitors` lists monitors and `POST /api/auth/monitors/create` creates one. `POST /api/auth/monitors/{id}/update` replaces its configuration and `POST /api/auth/monitors/{id}/delete` deletes it. All use the existing authentication Web Lock and server-only adapter, including HttpOnly cookie refresh and CSRF checks. Reads use POST because session refresh may rotate cookies. No tokens are sent in response JSON.
 
 Restart the combined launcher to apply migration `00004_monitors.sql`. Component and API tests cover validation and error recovery; Playwright covers custom intervals in all three units, editing, confirmed deletion, reload persistence, session refresh, account isolation, and desktop/mobile layouts.

@@ -14,7 +14,8 @@ function monitor(value: unknown): Monitor {
   // Validate the response shape without reapplying creation policy to old rows.
   // URLs are displayed as text, so legacy URLs must not break the entire list.
   if (!m || typeof m.id !== "string" || typeof m.url !== "string" || new TextEncoder().encode(m.url).length > 2048 || typeof m.created_at !== "string" || typeof m.interval_seconds !== "number" || !Number.isInteger(m.interval_seconds) || m.interval_seconds < 1 || m.interval_seconds > MAX_INTERVAL_SECONDS) throw invalidResponse();
-  return { id: m.id, url: m.url, interval_seconds: m.interval_seconds, created_at: m.created_at };
+  const favicon = typeof m.favicon === "string" && m.favicon.length <= 87406 && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(m.favicon) ? m.favicon : undefined;
+  return { id: m.id, url: m.url, interval_seconds: m.interval_seconds, created_at: m.created_at, ...(favicon ? { favicon } : {}) };
 }
 function page(value: unknown): MonitorPage {
   const data = value as Partial<MonitorPage> | undefined;

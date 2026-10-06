@@ -133,7 +133,7 @@
                 "properties": {
                     "monitors": {
                         "items": {
-                            "$ref": "#/components/schemas/store.Monitor"
+                            "$ref": "#/components/schemas/monitor.monitorResponse"
                         },
                         "type": "array",
                         "uniqueItems": false
@@ -161,6 +161,37 @@
                     }
                 },
                 "required": [
+                    "interval_seconds",
+                    "url"
+                ],
+                "type": "object"
+            },
+            "monitor.monitorResponse": {
+                "properties": {
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "favicon": {
+                        "example": "data:image/png;base64,...",
+                        "type": "string"
+                    },
+                    "id": {
+                        "format": "uuid",
+                        "type": "string"
+                    },
+                    "interval_seconds": {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "type": "integer"
+                    },
+                    "url": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
                     "interval_seconds",
                     "url"
                 ],
@@ -206,33 +237,6 @@
                 },
                 "required": [
                     "name"
-                ],
-                "type": "object"
-            },
-            "store.Monitor": {
-                "properties": {
-                    "created_at": {
-                        "format": "date-time",
-                        "type": "string"
-                    },
-                    "id": {
-                        "format": "uuid",
-                        "type": "string"
-                    },
-                    "interval_seconds": {
-                        "maximum": 2147483647,
-                        "minimum": 1,
-                        "type": "integer"
-                    },
-                    "url": {
-                        "type": "string"
-                    }
-                },
-                "required": [
-                    "created_at",
-                    "id",
-                    "interval_seconds",
-                    "url"
                 ],
                 "type": "object"
             }
@@ -853,7 +857,7 @@
         },
         "/monitors": {
             "get": {
-                "description": "Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null.",
+                "description": "Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null. Includes optional PNG favicon data URIs, cached for up to one hour. Favicon discovery is best-effort, limited to public HTTP/HTTPS on standard ports, with a shared three-second request deadline and a one-second budget per URL; concurrent requests for the same URL share discovery, and failures omit favicon.",
                 "operationId": "listMonitors",
                 "parameters": [
                     {
@@ -929,7 +933,7 @@
                 ]
             },
             "post": {
-                "description": "Saves configuration only; no outbound checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.",
+                "description": "Saves configuration and discovers an optional PNG favicon; no uptime checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.",
                 "operationId": "createMonitor",
                 "parameters": [
                     {
@@ -970,7 +974,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/store.Monitor"
+                                    "$ref": "#/components/schemas/monitor.monitorResponse"
                                 }
                             }
                         },
@@ -1129,7 +1133,7 @@
                 ]
             },
             "put": {
-                "description": "Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved.",
+                "description": "Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved. Discovers an optional PNG favicon for the saved URL; icon failures do not fail the update.",
                 "operationId": "updateMonitor",
                 "parameters": [
                     {
@@ -1180,7 +1184,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/store.Monitor"
+                                    "$ref": "#/components/schemas/monitor.monitorResponse"
                                 }
                             }
                         },
