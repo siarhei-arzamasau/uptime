@@ -2,7 +2,7 @@
 
 ## Scope & Project Organization
 
-This repository contains a Go authentication API and a Next.js authentication frontend; uptime monitoring is not implemented yet.
+This repository contains a Go API, a PostgreSQL-backed monitoring worker, and a Next.js frontend for authentication and website monitoring.
 
 These guidelines apply to both projects. Read the corresponding project guide before making changes:
 

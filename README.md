@@ -1,6 +1,6 @@
 # Uptime App
 
-Two independent projects: a Go API and a Next.js interface for registration, login, profiles, and website monitors. Users can add, edit, and delete website URLs with configurable check intervals; actual monitoring checks are not implemented yet.
+Two independent projects: a Go API and a Next.js interface for registration, login, profiles, and website monitors. Users can add, edit, and delete website URLs with configurable check intervals; a separate Go worker runs public HTTP GET checks and stores 30 days of minute aggregates for live statuses and availability charts.
 
 ```text
 backend/
@@ -43,7 +43,7 @@ Requires Node.js 22.12+, Go 1.26+, Docker Compose, installed npm dependencies, a
 node scripts/dev.mjs
 ```
 
-The script starts PostgreSQL, applies migrations, and launches the API and frontend. Ctrl+C stops both applications while preserving the database. If Go is not on PATH, set `GO_BIN=/absolute/path/to/go` in `backend/.env`. On macOS, install Go permanently with `brew install go`.
+The script starts PostgreSQL, applies migrations, and launches the API, monitoring worker, and frontend. Ctrl+C stops both applications while preserving the database. If Go is not on PATH, set `GO_BIN=/absolute/path/to/go` in `backend/.env`. On macOS, install Go permanently with `brew install go`.
 
 Configuration details, themes, and tests: [frontend/README.md](frontend/README.md). Plan and checklist: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
 
