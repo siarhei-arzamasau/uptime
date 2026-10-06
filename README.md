@@ -55,18 +55,21 @@ work in this project. After implementation, apply
 to verify the affected user flows and desktop/mobile layout before completing the
 task. Builds and automated tests complement this mandatory browser check.
 
-If Playwright MCP is not connected, add the following server to the project's
-`.codex/config.toml`, preserving any existing MCP entries:
+The project's `.codex/config.toml` registers Playwright MCP alongside PostgreSQL:
 
 ```toml
 [mcp_servers.playwright]
 command = "npx"
-args = ["-y", "@playwright/mcp@latest", "--isolated"]
+args = ["-y", "@playwright/mcp@0.0.83", "--browser", "chromium", "--isolated"]
 startup_timeout_sec = 120
+tool_timeout_sec = 60
 ```
 
-Node.js and npm must be on PATH. Reload the MCP configuration or start a new Codex
-session to expose the tools. The isolated browser session avoids reusing personal
+Node.js and npm must be on PATH. The pinned server uses Playwright's Chromium,
+so a system Chrome installation is not required. On a new machine, install its
+matching browser with `npx -y @playwright/mcp@0.0.83 install-browser chrome-for-testing`.
+Reload the MCP configuration or start a new Codex session to expose the tools.
+The isolated browser session avoids reusing personal
 browser state. For checks that change data, start `node scripts/dev.mjs --e2e`
 from the repository root and use `http://localhost:3001` with the dedicated
 `uptime_e2e_test` database; do not run manual verification and the automated E2E
