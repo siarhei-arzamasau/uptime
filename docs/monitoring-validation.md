@@ -36,9 +36,31 @@ For 10 monitors at 43,200 minute rows each:
 - Reading one monitor's 30-day history: about 11.7 ms.
 - Deleting all 432,000 expired rows in 5000-row batches: about 613 ms of direct database calls. The production cleanup loop additionally yields 50 ms between batches.
 
-## Browser verification limitation
+## Manual browser verification — passed
 
-**Manual Playwright MCP verification remains blocked:** this session exposes no Playwright MCP tools. Automated E2E and inspected screenshot artifacts passed, but the repository's manual MCP requirement has not been satisfied. Before marking the change ready for review, run the documented MCP verification on the implementation checkout at 1440×900 and 390×844, exercise creation/edit/deletion/status/history, inspect console/network errors, and attach screenshots.
+Completed on 2026-10-06 through Playwright MCP 0.0.83 and its Chromium browser, against this checkout started with `node scripts/dev.mjs --e2e`. Frontend: `http://localhost:3001`; API: `127.0.0.1:8081`; PostgreSQL: local dedicated container on port 55436, database `uptime_e2e_test`, schema `public`, already at migration 5. A new synthetic account was used. All three monitors created for this check were deleted through the UI, deletion survived reload, and the account was signed out. No production data was used.
+
+| Criterion | Result and evidence |
+| --- | --- |
+| Creation and validation | Passed: 4-second interval rejected; 5-second interval accepted; real worker GET to `https://example.com` produced Working / HTTP 200. |
+| Failure and recovery on the same URL | Passed without response mocks: `https://httpbin.org/status/200,503` produced HTTP 200 at 07:27:16, HTTP 503 at 07:27:36, and HTTP 200 at 07:27:56 (Europe/Minsk). UI switched Working → Unavailable → Working. History contained both successes and failures, including 12/18 = 66.67%. |
+| URL and interval edits | Passed: interval changed from 5 to 10 seconds with existing samples retained; URL-change warning appeared before saving; switching to an example.com missing path returned HTTP 404 and reset history; switching back returned HTTP 200 with fresh history. Settings and results survived reload. |
+| Pending, missing and stale data | Passed: while the test worker was paused, a new monitor showed Awaiting first check and No data, with zero samples. Existing points became No fresh data while retaining their last HTTP result. Resuming the worker restored fresh status; the `.invalid` monitor reported DNS lookup failed. |
+| History | Passed: default 24 hours, all four periods, corresponding steps 60/300/1800/7200 seconds, one expanded chart, explicit empty buckets, mixed-result percentages, and automatic history/status refresh. |
+| Keyboard and touch | Passed: Home/End selected empty/latest buckets with accessible detail; Chromium touch events moved the slider on mobile. Delete cancellation initially focused Cancel and restored focus to the originating button. |
+| Visibility handling | Passed with a controlled browser visibility event: overriding both `document.hidden` and `visibilityState` stopped requests for 7 seconds; restoring visibility immediately requested status and history. Native tab switching in this automation session kept the page visible, so this check is explicitly simulated. No monitoring responses were mocked. |
+| Layout and themes | Passed: screenshots captured and visually inspected at 1440×900 and 390×844 in light/dark themes; no horizontal overflow, clipped controls or application-layer overlap. Edit warning and deletion confirmation also inspected on mobile. The Next.js development indicator is visible in screenshots. |
+| Deletion and adjacent authentication | Passed: cancellation retained the point; confirmed deletion returned HTTP 200 for all three test monitors; reload showed No websites yet; sign-out returned to login. |
+| Console/network | Passed for affected flows: registration returned 201; monitoring CRUD, status and history requests succeeded. No JavaScript errors or monitoring request failures. One unrelated HTTP 404 for the application's absent `/favicon.ico` was recorded; the base branch also has no favicon asset. |
+
+Screenshot evidence (captured during real public HTTP checks; results naturally differ between captures):
+
+| Desktop | Mobile |
+| --- | --- |
+| [Light](images/monitoring/desktop-light-mixed-history.png) | [Light](images/monitoring/mobile-light-mixed-history.png) |
+| [Dark](images/monitoring/desktop-dark-mixed-history.png) | [Dark](images/monitoring/mobile-dark-mixed-history.png) |
+
+This follow-up changes documentation and evidence only. The previously passed automated suites above were not rerun because application code did not change; API and worker were rebuilt by the E2E launcher. No monitoring regressions requiring code changes were found.
 
 ## Rollout
 
