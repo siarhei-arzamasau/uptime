@@ -18,7 +18,10 @@ import (
 	"uptime-app/backend/internal/store"
 )
 
-type Controller struct{ store *store.Store }
+type Controller struct {
+	store    *store.Store
+	favicons *faviconFetcher
+}
 
 type monitorRequest struct {
 	URL             string `json:"url" example:"https://example.com"`
@@ -26,12 +29,14 @@ type monitorRequest struct {
 }
 
 type listResponse struct {
-	Monitors   []store.Monitor `json:"monitors"`
-	NextCursor string          `json:"next_cursor,omitempty" validate:"optional"`
+	Monitors   []monitorResponse `json:"monitors"`
+	NextCursor string            `json:"next_cursor,omitempty" validate:"optional"`
 }
 
 // NewController binds monitor persistence without starting checks or doing I/O.
-func NewController(s *store.Store) *Controller { return &Controller{store: s} }
+func NewController(s *store.Store) *Controller {
+	return &Controller{store: s, favicons: newFaviconFetcher()}
+}
 
 // RegisterRoutes mounts authenticated monitor management and cursor-based listing.
 // authenticate must supply the auth user ID; database work observes each request context.
@@ -46,14 +51,14 @@ func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.H
 // @Summary Create a website monitor
 // @ID createMonitor
 // @Tags monitors
-// @Description Saves configuration only; no outbound checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.
+// @Description Saves configuration and discovers an optional PNG favicon; no uptime checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param Origin header string false "Allowed frontend origin; required for browser requests"
 // @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
 // @Param monitor body monitorRequest true "Website URL and interval in seconds"
-// @Success 201 {object} store.Monitor "Created monitor"
+// @Success 201 {object} monitorResponse "Created monitor"
 // @Failure 400 {object} httpx.ErrorResponse "Invalid JSON, URL, or interval"
 // @Failure 401 {object} httpx.ErrorResponse "Invalid access token"
 // @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
@@ -75,14 +80,14 @@ func (c *Controller) create(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "internal_error", "Unable to create the monitor")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, m)
+	httpx.WriteJSON(w, http.StatusCreated, c.withFavicons(r.Context(), []store.Monitor{m})[0])
 }
 
 // list uses an exclusive cursor to preserve ordering across pages with equal timestamps.
 // @Summary List website monitors
 // @ID listMonitors
 // @Tags monitors
-// @Description Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null.
+// @Description Returns at most 50 monitors owned by the Bearer JWT identity, newest first by (created_at, id). Use next_cursor for the next page; it is omitted on the last page. Empty monitors is an array, not null. Includes optional PNG favicon data URIs, cached for up to one hour. Favicon discovery is best-effort, limited to public HTTP/HTTPS on standard ports, with a shared three-second deadline; failures omit favicon.
 // @Produce json
 // @Security BearerAuth
 // @Param cursor query string false "Opaque next_cursor from the preceding page" maxLength(128)
@@ -109,12 +114,13 @@ func (c *Controller) list(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "internal_error", "Unable to load monitors")
 		return
 	}
-	result := listResponse{Monitors: monitors}
+	result := listResponse{}
 	if len(monitors) > store.MonitorPageSize {
-		result.Monitors = monitors[:store.MonitorPageSize]
-		last := result.Monitors[len(result.Monitors)-1]
+		monitors = monitors[:store.MonitorPageSize]
+		last := monitors[len(monitors)-1]
 		result.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.ID.String()))
 	}
+	result.Monitors = c.withFavicons(r.Context(), monitors)
 	httpx.WriteJSON(w, 200, result)
 }
 
@@ -179,7 +185,7 @@ func readMonitor(w http.ResponseWriter, r *http.Request) (monitorRequest, bool) 
 // @Summary Update a website monitor
 // @ID updateMonitor
 // @Tags monitors
-// @Description Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved.
+// @Description Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved. Discovers an optional PNG favicon for the saved URL; icon failures do not fail the update.
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Monitor UUID" format(uuid)
@@ -187,7 +193,7 @@ func readMonitor(w http.ResponseWriter, r *http.Request) (monitorRequest, bool) 
 // @Param X-CSRF-Protection header string false "Must be 1 for mutating requests without Origin" enums(1)
 // @Accept json
 // @Param monitor body monitorRequest true "Website URL and interval in seconds"
-// @Success 200 {object} store.Monitor "Updated monitor"
+// @Success 200 {object} monitorResponse "Updated monitor"
 // @Failure 400 {object} httpx.ErrorResponse "Invalid monitor ID or JSON, URL, interval"
 // @Failure 401 {object} httpx.ErrorResponse "Invalid access token"
 // @Failure 403 {object} httpx.ErrorResponse "Origin or CSRF rejected"
@@ -220,7 +226,7 @@ func (c *Controller) update(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "internal_error", "Unable to update the monitor")
 		return
 	}
-	httpx.WriteJSON(w, 200, m)
+	httpx.WriteJSON(w, 200, c.withFavicons(r.Context(), []store.Monitor{m})[0])
 }
 
 // delete scopes the mutation to the authenticated owner to avoid exposing other users' records.

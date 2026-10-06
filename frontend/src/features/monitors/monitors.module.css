@@ -30,7 +30,8 @@
 .row + .row { border-top: 1px solid var(--border); }
 .website { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .website > div { min-width: 0; }
-.marker { width: 12px; height: 12px; flex-shrink: 0; border: 2px solid var(--muted); border-radius: 50%; }
+.siteIcon { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 8px; background: var(--soft); color: var(--muted); }
+.siteIcon img { object-fit: contain; }
 .url { overflow-wrap: anywhere; font-size: 15px; font-weight: 600; margin: 0 0 4px; }
 .status { color: var(--muted); font-size: 12px; }
 .frequency { flex-shrink: 0; color: var(--muted); font: 13px ui-monospace, monospace; margin: 0; }
@@ -43,7 +44,7 @@
   .fields { grid-template-columns: 1fr; gap: 20px; }
   .listHeading { align-items: flex-start; flex-direction: column; gap: 8px; padding: 20px; }
   .row { align-items: flex-start; flex-direction: column; gap: 14px; padding: 20px; }
-  .frequency { padding-left: 26px; }
+  .frequency { padding-left: 50px; }
 }
 .danger { border: 1px solid var(--error); border-radius: 8px; padding: 11px 20px; background: var(--surface); color: var(--error); font-weight: 600; white-space: nowrap; }
 .rowControls { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }

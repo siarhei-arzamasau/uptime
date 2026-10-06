@@ -12,6 +12,14 @@ Go API for authentication, profiles, and website monitors: PostgreSQL 17, GORM, 
 
 Place new controllers inside their owning modules and expose `RegisterRoutes`.
 
+## Website favicons
+
+Monitor list/create/update responses include optional `favicon` PNG data URIs. Discovery reads the page's icon links (including Apple touch icons), then tries `/favicon.png` and `/favicon.ico`; only actual PNG content is accepted. ICO/SVG-only sites use the frontend fallback. PNG input/output is limited to 64 KiB and dimensions to 256 × 256; images are decoded and re-encoded before returning them.
+
+Discovery is best-effort with a shared three-second request deadline and at most eight concurrent fetches per controller. The bounded in-memory cache holds up to 256 URL entries for one hour (five minutes for missing icons); it resets on restart. A changed URL uses a separate cache entry. No database migration is needed, and discovery failures never fail monitor CRUD.
+
+Only public HTTP/HTTPS destinations on standard ports are fetched. DNS results are validated and the checked IP is dialed directly on every connection, including redirects. Private, loopback, link-local, shared and reserved ranges, credentials and environment proxies are excluded. No session credentials are sent. HTML and image bodies and redirect chains are bounded.
+
 ## Requirements and startup
 
 Requires Go 1.26+, Docker with Compose, `curl`, and Python 3 for the examples below. On macOS, start Docker Desktop (`open -a Docker`) and wait for `docker info` to succeed.

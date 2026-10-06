@@ -125,3 +125,18 @@ it.each(["update", "delete"] as const)("does not retry an uncertain %s", async a
   expect((await handleMonitors(req(input), action, id)).status).toBe(503);
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+it("preserves PNG data for create, update and list responses", async () => {
+  const iconMonitor = { ...monitor, favicon: "data:image/png;base64,aGVsbG8=" };
+  for (const action of ["create", "update", "list"] as const) {
+    fetchMock.mockResolvedValueOnce(Response.json(action === "list" ? { monitors: [iconMonitor] } : iconMonitor));
+    const response = await handleMonitors(req(action === "list" ? undefined : input), action, id);
+    expect(await response.json()).toEqual(action === "list" ? { monitors: [iconMonitor] } : { monitor: iconMonitor });
+  }
+});
+
+it.each(["https://external.example/icon.png", "data:image/svg+xml;base64,PHN2Zz4=", "data:image/png;base64," + "a".repeat(90000), 123])("discards unsafe or oversized favicon values: %s", async favicon => {
+  fetchMock.mockResolvedValueOnce(Response.json({ monitors: [{ ...monitor, favicon }] }));
+  const response = await handleMonitors(req(), "list");
+  expect(await response.json()).toEqual({ monitors: [monitor] });
+});
