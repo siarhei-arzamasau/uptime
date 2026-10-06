@@ -47,6 +47,32 @@ The script starts PostgreSQL, applies migrations, and launches the API and front
 
 Configuration details, themes, and tests: [frontend/README.md](frontend/README.md). Plan and checklist: [docs/frontend-authentication-plan.md](docs/frontend-authentication-plan.md).
 
+## Local PostgreSQL MCP
+
+The project-scoped [Codex configuration](.codex/config.toml) starts
+[postgres-mcp](https://github.com/crystaldba/postgres-mcp) over stdio with read/write
+access, including schema changes. It requires Node.js 22.12+ and
+[uv](https://docs.astral.sh/uv/getting-started/installation/) (`uvx` on PATH).
+Open Codex from the repository root and trust the project to load its MCP configuration.
+
+The launcher reads `DATABASE_URL` from this checkout's ignored `backend/.env` and
+accepts only local PostgreSQL addresses. Set up that file and start PostgreSQL using
+[the backend instructions](backend/README.md). Each worktree needs its own local
+`backend/.env`; credentials are never stored in the MCP configuration.
+Use `localhost`, `127.0.0.1`, or `[::1]` in the URI authority. Connection-address
+query fields (`host`, `hostaddr`, and `service`) and raw URI fragments are rejected;
+other options such as `sslmode` remain supported. The launcher removes ambient
+`PG*` variables before starting MCP so they cannot change the connection target.
+
+Run the launcher regressions with `npm test -- ../scripts/postgres-mcp.test.mjs`
+from `frontend/`. They use a fake `uvx` and never connect to PostgreSQL.
+
+The first launch downloads pinned postgres-mcp and MCP SDK versions. Restart Codex
+or start a new chat after adding the configuration, then check that `uptime-postgres`
+appears in the MCP server list. The server supports schema inspection, SQL execution,
+and query plans; advanced performance tools may need optional PostgreSQL extensions
+described in the postgres-mcp documentation.
+
 ## Code review
 
 Use the project skill `$uptime-code-review` to review a commit, PR, or local diff. It runs scoped static checks before reviewing the [product architecture](.agents/skills/uptime-code-review/references/architecture.md) and [checklist](.agents/skills/uptime-code-review/references/review-checklist.md), then reports actionable findings from P0 (critical) to P3 (low).
