@@ -12,6 +12,7 @@ require (
 	golang.org/x/sync v0.23.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
+	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
@@ -41,7 +42,6 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
 tool github.com/swaggo/swag/v2/cmd/swag

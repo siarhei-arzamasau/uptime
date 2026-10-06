@@ -25,7 +25,7 @@ type Controller struct {
 
 type monitorRequest struct {
 	URL             string `json:"url" example:"https://example.com"`
-	IntervalSeconds int    `json:"interval_seconds" minimum:"1" maximum:"2147483647" example:"60"`
+	IntervalSeconds int    `json:"interval_seconds" minimum:"5" maximum:"2147483647" example:"60"`
 }
 
 type listResponse struct {
@@ -41,6 +41,8 @@ func NewController(s *store.Store) *Controller {
 // RegisterRoutes mounts authenticated monitor management and cursor-based listing.
 // authenticate must supply the auth user ID; database work observes each request context.
 func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler) {
+	mux.Handle("GET /api/v1/monitors/status", authenticate(http.HandlerFunc(c.statuses)))
+	mux.Handle("GET /api/v1/monitors/{id}/history", authenticate(http.HandlerFunc(c.history)))
 	mux.Handle("GET /api/v1/monitors", authenticate(http.HandlerFunc(c.list)))
 	mux.Handle("POST /api/v1/monitors", authenticate(http.HandlerFunc(c.create)))
 	mux.Handle("PUT /api/v1/monitors/{id}", authenticate(http.HandlerFunc(c.update)))
@@ -51,7 +53,7 @@ func (c *Controller) RegisterRoutes(mux *http.ServeMux, authenticate func(http.H
 // @Summary Create a website monitor
 // @ID createMonitor
 // @Tags monitors
-// @Description Saves configuration and discovers an optional PNG favicon; no uptime checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.
+// @Description Saves configuration and discovers an optional PNG favicon; schedules an immediate background GET check. Only original HTTP 200 is successful; redirects are not followed. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds, at least 5.
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -80,7 +82,7 @@ func (c *Controller) create(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "internal_error", "Unable to create the monitor")
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, c.withFavicons(r.Context(), []store.Monitor{m})[0])
+	c.writeMonitor(w, r, m, http.StatusCreated)
 }
 
 // list uses an exclusive cursor to preserve ordering across pages with equal timestamps.
@@ -121,6 +123,9 @@ func (c *Controller) list(w http.ResponseWriter, r *http.Request) {
 		result.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.ID.String()))
 	}
 	result.Monitors = c.withFavicons(r.Context(), monitors)
+	if !c.addStatuses(w, r, result.Monitors) {
+		return
+	}
 	httpx.WriteJSON(w, 200, result)
 }
 
@@ -174,8 +179,8 @@ func readMonitor(w http.ResponseWriter, r *http.Request) (monitorRequest, bool) 
 		)
 		return body, false
 	}
-	if body.IntervalSeconds < 1 || body.IntervalSeconds > 2147483647 {
-		httpx.WriteError(w, 400, "invalid_interval", "Check interval must be a whole number between 1 and 2147483647 seconds")
+	if body.IntervalSeconds < 5 || body.IntervalSeconds > 2147483647 {
+		httpx.WriteError(w, 400, "invalid_interval", "Check interval must be a whole number between 5 and 2147483647 seconds")
 		return body, false
 	}
 	return body, true
@@ -185,7 +190,7 @@ func readMonitor(w http.ResponseWriter, r *http.Request) (monitorRequest, bool) 
 // @Summary Update a website monitor
 // @ID updateMonitor
 // @Tags monitors
-// @Description Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved. Discovers an optional PNG favicon for the saved URL; icon failures do not fail the update.
+// @Description Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved. Schedules an immediate check; changing the URL clears history and the last result, changing only the interval preserves history. Discovers an optional PNG favicon for the saved URL; icon failures do not fail the update.
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Monitor UUID" format(uuid)
@@ -226,7 +231,7 @@ func (c *Controller) update(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "internal_error", "Unable to update the monitor")
 		return
 	}
-	httpx.WriteJSON(w, 200, c.withFavicons(r.Context(), []store.Monitor{m})[0])
+	c.writeMonitor(w, r, m, http.StatusOK)
 }
 
 // delete scopes the mutation to the authenticated owner to avoid exposing other users' records.

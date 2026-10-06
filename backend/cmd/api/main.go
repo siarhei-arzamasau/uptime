@@ -20,9 +20,11 @@ import (
 
 //go:generate go tool swag init --generalInfo main.go --dir .,../../internal/auth,../../internal/profile,../../internal/monitor,../../internal/httpx,../../internal/store --parseInternal --output ../../docs --outputTypes json,yaml --v3.1 --requiredByDefault
 
+//go:generate go run ../openapi-nullable ../../docs
+
 // @title Uptime API
 // @version 1.0.0
-// @description Authentication, profiles, avatars, and website monitor configuration. Unknown JSON fields are rejected. Monitoring checks are not implemented.
+// @description Authentication, profiles, avatars, and website monitoring. Unknown JSON fields are rejected. Checks run in the separate worker.
 // @description Requests with Origin must match ALLOWED_ORIGIN. Mutating requests without Origin require X-CSRF-Protection: 1. Access JWTs expire after 900 seconds; logout does not invalidate existing JWTs.
 // @servers.url /api/v1
 // @servers.description Current API server

@@ -152,7 +152,7 @@
                     "interval_seconds": {
                         "example": 60,
                         "maximum": 2147483647,
-                        "minimum": 1,
+                        "minimum": 5,
                         "type": "integer"
                     },
                     "url": {
@@ -168,6 +168,9 @@
             },
             "monitor.monitorResponse": {
                 "properties": {
+                    "check": {
+                        "$ref": "#/components/schemas/store.MonitorStatus"
+                    },
                     "created_at": {
                         "format": "date-time",
                         "type": "string"
@@ -182,7 +185,7 @@
                     },
                     "interval_seconds": {
                         "maximum": 2147483647,
-                        "minimum": 1,
+                        "minimum": 5,
                         "type": "integer"
                     },
                     "url": {
@@ -190,10 +193,26 @@
                     }
                 },
                 "required": [
+                    "check",
                     "created_at",
                     "id",
                     "interval_seconds",
                     "url"
+                ],
+                "type": "object"
+            },
+            "monitor.statusResponse": {
+                "properties": {
+                    "monitors": {
+                        "items": {
+                            "$ref": "#/components/schemas/store.MonitorStatus"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "required": [
+                    "monitors"
                 ],
                 "type": "object"
             },
@@ -239,6 +258,146 @@
                     "name"
                 ],
                 "type": "object"
+            },
+            "store.HistoryBucket": {
+                "properties": {
+                    "availability": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "end": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "failures": {
+                        "type": "integer"
+                    },
+                    "start": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "successes": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "availability",
+                    "end",
+                    "failures",
+                    "start",
+                    "successes"
+                ],
+                "type": "object"
+            },
+            "store.MonitorHistory": {
+                "properties": {
+                    "availability": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "buckets": {
+                        "items": {
+                            "$ref": "#/components/schemas/store.HistoryBucket"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "failures": {
+                        "type": "integer"
+                    },
+                    "from": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "step_seconds": {
+                        "type": "integer"
+                    },
+                    "successes": {
+                        "type": "integer"
+                    },
+                    "to": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "availability",
+                    "buckets",
+                    "failures",
+                    "from",
+                    "step_seconds",
+                    "successes",
+                    "to",
+                    "version"
+                ],
+                "type": "object"
+            },
+            "store.MonitorStatus": {
+                "properties": {
+                    "error_kind": {
+                        "type": "string"
+                    },
+                    "http_status": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "id": {
+                        "format": "uuid",
+                        "type": "string"
+                    },
+                    "last_finished_at": {
+                        "format": "date-time",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "last_started_at": {
+                        "format": "date-time",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "last_success": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "enum": [
+                            "pending",
+                            "up",
+                            "down",
+                            "stale"
+                        ],
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "error_kind",
+                    "http_status",
+                    "id",
+                    "last_finished_at",
+                    "last_started_at",
+                    "last_success",
+                    "status",
+                    "version"
+                ],
+                "type": "object"
             }
         },
         "securitySchemes": {
@@ -256,15 +415,16 @@
             }
         }
     },
-    "info": {
-        "description": "Authentication, profiles, avatars, and website monitor configuration. Unknown JSON fields are rejected. Monitoring checks are not implemented.\nRequests with Origin must match ALLOWED_ORIGIN. Mutating requests without Origin require X-CSRF-Protection: 1. Access JWTs expire after 900 seconds; logout does not invalidate existing JWTs.",
-        "title": "Uptime API",
-        "version": "1.0.0"
-    },
     "externalDocs": {
         "description": "",
         "url": ""
     },
+    "info": {
+        "description": "Authentication, profiles, avatars, and website monitoring. Unknown JSON fields are rejected. Checks run in the separate worker.\nRequests with Origin must match ALLOWED_ORIGIN. Mutating requests without Origin require X-CSRF-Protection: 1. Access JWTs expire after 900 seconds; logout does not invalidate existing JWTs.",
+        "title": "Uptime API",
+        "version": "1.0.0"
+    },
+    "openapi": "3.1.0",
     "paths": {
         "/auth/login": {
             "post": {
@@ -296,8 +456,8 @@
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/auth.credentialsRequest",
-                                "summary": "credentials",
-                                "description": "Email and password"
+                                "description": "Email and password",
+                                "summary": "credentials"
                             }
                         }
                     },
@@ -641,8 +801,8 @@
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/auth.credentialsRequest",
-                                "summary": "credentials",
-                                "description": "Email and password"
+                                "description": "Email and password",
+                                "summary": "credentials"
                             }
                         }
                     },
@@ -933,7 +1093,7 @@
                 ]
             },
             "post": {
-                "description": "Saves configuration and discovers an optional PNG favicon; no uptime checks run. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds.",
+                "description": "Saves configuration and discovers an optional PNG favicon; schedules an immediate background GET check. Only original HTTP 200 is successful; redirects are not followed. Owner is taken from the Bearer JWT. URL is trimmed and must be absolute HTTP/HTTPS without credentials, whitespace, or fragments, with an ASCII host and at most 2048 bytes. Interval must be a whole number of seconds, at least 5.",
                 "operationId": "createMonitor",
                 "parameters": [
                     {
@@ -961,8 +1121,8 @@
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/monitor.monitorRequest",
-                                "summary": "monitor",
-                                "description": "Website URL and interval in seconds"
+                                "description": "Website URL and interval in seconds",
+                                "summary": "monitor"
                             }
                         }
                     },
@@ -1027,6 +1187,94 @@
                     }
                 ],
                 "summary": "Create a website monitor",
+                "tags": [
+                    "monitors"
+                ]
+            }
+        },
+        "/monitors/status": {
+            "get": {
+                "description": "Returns each requested owned monitor. Any missing or foreign ID returns 404. Status is pending before the first result, stale after interval plus 15 seconds, otherwise up or down from the last check.",
+                "operationId": "monitorStatuses",
+                "parameters": [
+                    {
+                        "description": "Comma-separated unique monitor UUIDs, 1 to 50",
+                        "in": "query",
+                        "name": "ids",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/monitor.statusResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid ID list"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin rejected"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Monitor not found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unable to load statuses"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Read current monitor statuses without favicon discovery",
                 "tags": [
                     "monitors"
                 ]
@@ -1133,7 +1381,7 @@
                 ]
             },
             "put": {
-                "description": "Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved. Discovers an optional PNG favicon for the saved URL; icon failures do not fail the update.",
+                "description": "Replaces URL and interval for a monitor owned by the Bearer JWT identity. Uses the same URL and interval validation as creation. ID, owner and creation time are preserved. Schedules an immediate check; changing the URL clears history and the last result, changing only the interval preserves history. Discovers an optional PNG favicon for the saved URL; icon failures do not fail the update.",
                 "operationId": "updateMonitor",
                 "parameters": [
                     {
@@ -1171,8 +1419,8 @@
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/monitor.monitorRequest",
-                                "summary": "monitor",
-                                "description": "Website URL and interval in seconds"
+                                "description": "Website URL and interval in seconds",
+                                "summary": "monitor"
                             }
                         }
                     },
@@ -1247,6 +1495,110 @@
                     }
                 ],
                 "summary": "Update a website monitor",
+                "tags": [
+                    "monitors"
+                ]
+            }
+        },
+        "/monitors/{id}/history": {
+            "get": {
+                "description": "UTC minute counters retained for 30 days, grouped into graph buckets. Availability is the percentage of successful samples, not elapsed uptime. Empty buckets have null availability. The start rounds inward to a minute; the last bucket may be partial.",
+                "operationId": "monitorHistory",
+                "parameters": [
+                    {
+                        "description": "Monitor UUID",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "format": "uuid",
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "History window",
+                        "in": "query",
+                        "name": "period",
+                        "schema": {
+                            "default": "24h",
+                            "enum": [
+                                "1h",
+                                "24h",
+                                "7d",
+                                "30d"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/store.MonitorHistory"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid ID or period"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid access token"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Origin rejected"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Monitor not found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unable to load history"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Read aggregated monitor availability",
                 "tags": [
                     "monitors"
                 ]
@@ -1336,8 +1688,8 @@
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/profile.updateRequest",
-                                "summary": "profile",
-                                "description": "New name; empty string clears it"
+                                "description": "New name; empty string clears it",
+                                "summary": "profile"
                             }
                         }
                     },
@@ -1532,7 +1884,6 @@
             }
         }
     },
-    "openapi": "3.1.0",
     "servers": [
         {
             "description": "Current API server",
