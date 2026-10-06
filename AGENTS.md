@@ -29,6 +29,15 @@ Keep backend and frontend dependencies separate. Avoid adding speculative infras
 
 Run the checks documented in each affected project's guide from that project's directory. Report validation performed and any checks that could not run. Update relevant documentation when changing setup or commands.
 
+## Browser Work & Required Implementation Verification
+
+- Use **Playwright MCP** for all browser interaction, inspection, and manual verification in this project.
+- After every implementation task, apply [$uptime-browser-verification](.agents/skills/uptime-browser-verification/SKILL.md) before declaring the task complete or requesting review. Verify the affected user flows and layout in the running application, including backend changes observable through the UI.
+- Check desktop and mobile layouts, exercise functionality through the UI, inspect console/network errors, and capture screenshots for visible changes. Fix issues within the task's scope and repeat affected checks.
+- Automated tests, builds, and accessibility snapshots alone do not satisfy this browser verification requirement. Existing Playwright E2E tests remain required where the project guides specify them.
+- If Playwright MCP or the application is unavailable, complete independent checks, report the specific blocker, and mark browser verification as incomplete; do not silently substitute another browser tool or claim success.
+- Documentation-only and agent-configuration tasks without application behavior changes may mark browser verification as not applicable, explaining why.
+
 ## When starting a new task use GitHub Flow & Branch Naming
 
 - Before starting a new task, create a dedicated branch from the up-to-date `main` branch. Do not implement changes or commit directly on `main`.
