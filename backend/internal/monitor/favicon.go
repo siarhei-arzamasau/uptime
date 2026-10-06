@@ -32,11 +32,18 @@ type faviconEntry struct {
 	expires time.Time
 }
 
+type faviconCall struct {
+	done  chan struct{}
+	image string
+	retry bool
+}
+
 type faviconFetcher struct {
-	client *http.Client
-	slots  chan struct{}
-	mu     sync.Mutex
-	cache  map[string]faviconEntry
+	client   *http.Client
+	slots    chan struct{}
+	mu       sync.Mutex
+	cache    map[string]faviconEntry
+	inflight map[string]*faviconCall
 }
 
 func newFaviconFetcher() *faviconFetcher {
@@ -55,8 +62,9 @@ func newFaviconFetcher() *faviconFetcher {
 			}
 			return nil
 		}},
-		slots: make(chan struct{}, 8),
-		cache: make(map[string]faviconEntry),
+		slots:    make(chan struct{}, 8),
+		cache:    make(map[string]faviconEntry),
+		inflight: make(map[string]*faviconCall),
 	}
 }
 
@@ -78,12 +86,25 @@ func publicIP(ip netip.Addr) bool {
 	return ip.Is4() || netip.MustParsePrefix("2000::/3").Contains(ip)
 }
 
+type publicDialer struct {
+	lookup func(context.Context, string, string) ([]netip.Addr, error)
+	dial   func(context.Context, string, string) (net.Conn, error)
+}
+
 func dialPublic(ctx context.Context, network, address string) (net.Conn, error) {
+	var dialer net.Dialer
+	return (publicDialer{
+		lookup: net.DefaultResolver.LookupNetIP,
+		dial:   dialer.DialContext,
+	}).dialContext(ctx, network, address)
+}
+
+func (d publicDialer) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, fmt.Errorf("favicon address: %w", err)
 	}
-	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	ips, err := d.lookup(ctx, "ip", host)
 	if err != nil {
 		return nil, fmt.Errorf("favicon DNS: %w", err)
 	}
@@ -95,9 +116,29 @@ func dialPublic(ctx context.Context, network, address string) (net.Conn, error) 
 			return nil, fmt.Errorf("favicon address is not public")
 		}
 	}
-	// Dial the checked IP directly to prevent DNS rebinding between validation and connection.
-	var dialer net.Dialer
-	return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+	var lastErr error
+	for i, ip := range ips {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		attempt := ctx
+		cancel := func() {}
+		if deadline, ok := ctx.Deadline(); ok {
+			// Reserve a share of the remaining deadline so a stalled IP cannot starve fallback addresses.
+			attempt, cancel = context.WithTimeout(ctx, time.Until(deadline)/time.Duration(len(ips)-i))
+		}
+		// Dial only the checked IPs to prevent DNS rebinding between validation and connection.
+		conn, err := d.dial(attempt, network, net.JoinHostPort(ip.String(), port))
+		cancel()
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("favicon connection: %w", lastErr)
 }
 
 func faviconURL(u *url.URL) bool {
@@ -244,36 +285,69 @@ func (f *faviconFetcher) fetch(ctx context.Context, rawURL string) string {
 }
 
 func (f *faviconFetcher) get(ctx context.Context, rawURL string) string {
-	f.mu.Lock()
-	cached, ok := f.cache[rawURL]
-	f.mu.Unlock()
-	if ok && time.Now().Before(cached.expires) {
-		return cached.image
-	}
-	select {
-	case f.slots <- struct{}{}:
-		defer func() { <-f.slots }()
-	case <-ctx.Done():
-		return ""
-	}
-	image := f.fetch(ctx, rawURL)
-	if ctx.Err() != nil {
-		return image
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.cache) >= 256 {
-		for key := range f.cache {
-			delete(f.cache, key)
-			break
+	for {
+		if ctx.Err() != nil {
+			return ""
+		}
+		f.mu.Lock()
+		cached, ok := f.cache[rawURL]
+		if ok && time.Now().Before(cached.expires) {
+			f.mu.Unlock()
+			return cached.image
+		}
+		if call, ok := f.inflight[rawURL]; ok {
+			f.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return ""
+			case <-call.done:
+				if ctx.Err() != nil {
+					return ""
+				}
+				// A shorter-lived caller must not turn cancellation into a shared negative cache result.
+				if call.retry {
+					continue
+				}
+				return call.image
+			}
+		}
+		call := &faviconCall{done: make(chan struct{})}
+		f.inflight[rawURL] = call
+		f.mu.Unlock()
+
+		select {
+		case f.slots <- struct{}{}:
+			image := f.fetch(ctx, rawURL)
+			<-f.slots
+			f.complete(ctx, rawURL, call, image)
+			return image
+		case <-ctx.Done():
+			f.complete(ctx, rawURL, call, "")
+			return ""
 		}
 	}
-	ttl := time.Hour
-	if image == "" {
-		ttl = 5 * time.Minute
+}
+
+func (f *faviconFetcher) complete(ctx context.Context, rawURL string, call *faviconCall, image string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	call.image = image
+	call.retry = ctx.Err() != nil
+	if !call.retry {
+		if len(f.cache) >= 256 {
+			for key := range f.cache {
+				delete(f.cache, key)
+				break
+			}
+		}
+		ttl := time.Hour
+		if image == "" {
+			ttl = 5 * time.Minute
+		}
+		f.cache[rawURL] = faviconEntry{image: image, expires: time.Now().Add(ttl)}
 	}
-	f.cache[rawURL] = faviconEntry{image: image, expires: time.Now().Add(ttl)}
-	return image
+	delete(f.inflight, rawURL)
+	close(call.done)
 }
 
 func (c *Controller) withFavicons(ctx context.Context, monitors []store.Monitor) []monitorResponse {

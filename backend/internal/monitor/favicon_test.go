@@ -3,6 +3,7 @@ package monitor
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -12,7 +13,10 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"uptime-app/backend/internal/store"
@@ -168,4 +172,257 @@ func TestFaviconBaseAndLargeHTML(t *testing.T) {
 	if got := f.get(context.Background(), "https://example.com"); got != pngData(data) {
 		t.Fatal("missed icon in large page with base URL")
 	}
+}
+
+func TestFaviconDialAddressFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		ips         []netip.Addr
+		wantCalls   int
+		wantSuccess bool
+	}{
+		{
+			name:        "later public address succeeds",
+			ips:         []netip.Addr{netip.MustParseAddr("2606:4700:4700::1111"), netip.MustParseAddr("8.8.8.8")},
+			wantCalls:   2,
+			wantSuccess: true,
+		},
+		{
+			name:      "all public addresses fail",
+			ips:       []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("8.8.4.4")},
+			wantCalls: 2,
+		},
+		{
+			name: "mixed public and private rejected before dialing",
+			ips:  []netip.Addr{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("127.0.0.1")},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			unavailable := errors.New("unavailable")
+			conn, peer := net.Pipe()
+			defer conn.Close()
+			defer peer.Close()
+			d := publicDialer{
+				lookup: func(ctx context.Context, network, host string) ([]netip.Addr, error) {
+					if network != "ip" || host != "example.com" {
+						t.Fatalf("unexpected DNS lookup: %s %s", network, host)
+					}
+					return tc.ips, nil
+				},
+				dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					if network != "tcp" || address != net.JoinHostPort(tc.ips[calls].String(), "443") {
+						t.Fatalf("did not dial validated address: %s %s", network, address)
+					}
+					calls++
+					if tc.wantSuccess && calls == 2 {
+						return conn, nil
+					}
+					return nil, unavailable
+				},
+			}
+			got, err := d.dialContext(t.Context(), "tcp", "example.com:443")
+			if calls != tc.wantCalls || (err == nil) != tc.wantSuccess {
+				t.Fatalf("calls=%d, error=%v; want calls=%d, success=%v", calls, err, tc.wantCalls, tc.wantSuccess)
+			}
+			if tc.wantSuccess && got != conn {
+				t.Fatal("did not return successful connection")
+			}
+			if !tc.wantSuccess && calls > 0 && !errors.Is(err, unavailable) {
+				t.Fatalf("lost dial error: %v", err)
+			}
+		})
+	}
+}
+
+func TestFaviconDialReservesTimeForFallback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		defer cancel()
+		conn, peer := net.Pipe()
+		defer conn.Close()
+		defer peer.Close()
+		calls := 0
+		d := publicDialer{
+			lookup: func(context.Context, string, string) ([]netip.Addr, error) {
+				return []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("8.8.8.8")}, nil
+			},
+			dial: func(attempt context.Context, network, address string) (net.Conn, error) {
+				calls++
+				if calls == 1 {
+					<-attempt.Done()
+					return nil, attempt.Err()
+				}
+				if attempt.Err() != nil {
+					t.Fatalf("fallback context expired: %v", attempt.Err())
+				}
+				return conn, nil
+			},
+		}
+		got, err := d.dialContext(ctx, "tcp", "example.com:443")
+		if err != nil || got != conn || calls != 2 || ctx.Err() != nil {
+			t.Fatalf("fallback failed within request deadline: calls=%d err=%v", calls, err)
+		}
+	})
+}
+
+func TestFaviconDialStopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	calls := 0
+	d := publicDialer{
+		lookup: func(context.Context, string, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("8.8.8.8")}, nil
+		},
+		dial: func(context.Context, string, string) (net.Conn, error) {
+			calls++
+			cancel()
+			return nil, context.Canceled
+		},
+	}
+	_, err := d.dialContext(ctx, "tcp", "example.com:443")
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("did not stop on cancellation: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestFaviconCoalescesConcurrentMisses(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		found bool
+	}{
+		{name: "PNG", found: true},
+		{name: "missing icon", found: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				data := testPNG(t)
+				f := newFaviconFetcher()
+				release := make(chan struct{})
+				var pages, icons atomic.Int64
+				f.client.Transport = iconTransport(func(r *http.Request) (*http.Response, error) {
+					body := data
+					status := http.StatusOK
+					if r.URL.Host == "other.example" {
+						if r.URL.Path == "/" {
+							body = []byte(`<head><link rel="icon" href="/icon.png"></head>`)
+						}
+						return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
+					}
+					if r.URL.Path == "/" {
+						pages.Add(1)
+						<-release
+						body = []byte(`<head><link rel="icon" href="/icon.png"></head>`)
+					} else {
+						icons.Add(1)
+					}
+					if !tc.found {
+						status = http.StatusNotFound
+					}
+					return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
+				})
+				var group sync.WaitGroup
+				results := make([]string, 16)
+				for i := range results {
+					group.Go(func() { results[i] = f.get(t.Context(), "https://example.com/") })
+				}
+				synctest.Wait()
+				other := make(chan string, 1)
+				group.Go(func() { other <- f.get(t.Context(), "https://other.example/") })
+				synctest.Wait()
+				otherReady := len(other) == 1
+				close(release)
+				group.Wait()
+				want := ""
+				wantIcons := int64(2)
+				if tc.found {
+					want = pngData(data)
+					wantIcons = 1
+				}
+				for _, got := range results {
+					if got != want {
+						t.Fatal("concurrent callers did not share the icon result")
+					}
+				}
+				if pages.Load() != 1 || icons.Load() != wantIcons {
+					t.Fatalf("duplicate discovery: pages=%d icons=%d", pages.Load(), icons.Load())
+				}
+				if !otherReady || <-other == "" {
+					t.Fatal("duplicate URL waiters starved an unrelated icon")
+				}
+				if f.get(t.Context(), "https://example.com/") != want || pages.Load() != 1 {
+					t.Fatal("completed result was not cached")
+				}
+			})
+		})
+	}
+}
+
+func TestFaviconCanceledWaiterDoesNotCancelSharedFetch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		data := testPNG(t)
+		f := newFaviconFetcher()
+		release := make(chan struct{})
+		var pages atomic.Int64
+		f.client.Transport = iconTransport(func(r *http.Request) (*http.Response, error) {
+			body := data
+			if r.URL.Path == "/" {
+				pages.Add(1)
+				select {
+				case <-release:
+				case <-r.Context().Done():
+					return nil, r.Context().Err()
+				}
+				body = []byte(`<head><link rel="icon" href="/icon.png"></head>`)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
+		})
+		leader := make(chan string, 1)
+		go func() { leader <- f.get(t.Context(), "https://example.com/") }()
+		synctest.Wait()
+		ctx, cancel := context.WithCancel(t.Context())
+		waiter := make(chan string, 1)
+		go func() { waiter <- f.get(ctx, "https://example.com/") }()
+		synctest.Wait()
+		cancel()
+		if <-waiter != "" {
+			t.Fatal("canceled waiter returned an icon")
+		}
+		close(release)
+		if <-leader != pngData(data) || pages.Load() != 1 {
+			t.Fatal("waiter duplicated or canceled the shared fetch")
+		}
+	})
+}
+
+func TestFaviconLiveWaiterRetriesCanceledLeader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		data := testPNG(t)
+		f := newFaviconFetcher()
+		var pages atomic.Int64
+		f.client.Transport = iconTransport(func(r *http.Request) (*http.Response, error) {
+			body := data
+			if r.URL.Path == "/" {
+				if pages.Add(1) == 1 {
+					<-r.Context().Done()
+					return nil, r.Context().Err()
+				}
+				body = []byte(`<head><link rel="icon" href="/icon.png"></head>`)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
+		})
+		ctx, cancel := context.WithCancel(t.Context())
+		leader := make(chan string, 1)
+		go func() { leader <- f.get(ctx, "https://example.com/") }()
+		synctest.Wait()
+		waiter := make(chan string, 1)
+		go func() { waiter <- f.get(t.Context(), "https://example.com/") }()
+		synctest.Wait()
+		cancel()
+		if <-leader != "" || <-waiter != pngData(data) || pages.Load() != 2 {
+			t.Fatal("live waiter did not retry canceled discovery")
+		}
+		if f.get(t.Context(), "https://example.com/") != pngData(data) || pages.Load() != 2 {
+			t.Fatal("canceled discovery poisoned the shared cache")
+		}
+	})
 }
